@@ -34,5 +34,5 @@
 - [x] Implement click-to-play on individual text blocks.
 - [x] Implement lookahead prefetch: trigger background fetch for blocks $N+1$ and $N+2$ while block $N$ plays.
 - [x] Implement continuous playback: auto-advance to next block upon audio termination.
-- [ ] Run end-to-end smoke tests on ingestion, playback, and cache persistence.
+- [x] Run end-to-end smoke tests on ingestion, playback, and cache persistence.
 
