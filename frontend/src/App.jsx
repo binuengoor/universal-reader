@@ -195,6 +195,14 @@ export default function App() {
           setIsPlaying(true);
         }}
         onPause={() => setIsPlaying(false)}
+        onEnded={() => {
+          if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
+            setActiveBlockId((prev) => prev + 1);
+            setIsPlaying(true);
+          } else {
+            setIsPlaying(false);
+          }
+        }}
       />
 
       {selectedDocId ? (
