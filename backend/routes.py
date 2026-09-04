@@ -9,8 +9,52 @@ from typing import Optional, List
 
 from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
+from .tts import tts_client
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+models_router = APIRouter(prefix="/api/models", tags=["models"])
+
+@models_router.get("")
+async def get_models(search: Optional[str] = None, q: Optional[str] = None):
+    """List available TTS models with search/filter support."""
+    query = search or q
+    err_msg = None
+    upstream_available = True
+    try:
+        resp = await tts_client.list_models()
+        if isinstance(resp, dict) and "data" in resp:
+            models = resp["data"]
+        elif isinstance(resp, list):
+            models = resp
+        else:
+            models = [resp]
+    except Exception as e:
+        upstream_available = False
+        err_msg = str(e)
+        models = [
+            {"id": "tts-1", "name": "TTS 1 (Standard)"},
+            {"id": "tts-1-hd", "name": "TTS 1 HD (High Quality)"},
+        ]
+
+    if query:
+        q_lower = query.strip().lower()
+        filtered = []
+        for m in models:
+            if isinstance(m, dict):
+                m_id = str(m.get("id", "")).lower()
+                m_name = str(m.get("name", "")).lower()
+                if q_lower in m_id or q_lower in m_name:
+                    filtered.append(m)
+            elif q_lower in str(m).lower():
+                filtered.append(m)
+        models = filtered
+
+    return {
+        "object": "list",
+        "data": models,
+        "upstream_available": upstream_available,
+        "error": err_msg
+    }
 
 class CreateDocRequest(BaseModel):
     title: Optional[str] = None

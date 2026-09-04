@@ -17,7 +17,7 @@
 
 ## Phase 3: Universal TTS Integration & Audio Caching
 - [x] Implement upstream client wrapper for Universal TTS (`/v1/models` and `/v1/audio/speech`).
-- [ ] Create endpoint `GET /api/models` with search/filter proxy support.
+- [x] Create endpoint `GET /api/models` with search/filter proxy support.
 - [ ] Implement `POST /api/documents/{id}/blocks/{block_id}/audio`:
   - Compute cache key: `sha256(block_text + voice + model + speed)`.
   - Check local disk cache; if missed, request synthesis from upstream Universal TTS and save to `audio_cache/`.
