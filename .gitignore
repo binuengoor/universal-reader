@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Data
+data/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes
+
+# Logs
+*.log
+
+# Build
+dist/
+build/
+
+# Tests
+*.swp
+*.swo
+*.swn
+*.bak
+
+# Misc
+*.tmp
+*.temp
+*.swp
+*.swo
+*.swn
+*.bak
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+*.dockerignore
+
+# Virtualenv
+venv/
