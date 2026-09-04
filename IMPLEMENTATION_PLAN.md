@@ -16,7 +16,7 @@
 - [x] Build chunking utility: split ingested text into 250–500 char blocks and save `meta.json`, `document.md`, and `chunks.json` to `/data/documents/<id>/`.
 
 ## Phase 3: Universal TTS Integration & Audio Caching
-- [ ] Implement upstream client wrapper for Universal TTS (`/v1/models` and `/v1/audio/speech`).
+- [x] Implement upstream client wrapper for Universal TTS (`/v1/models` and `/v1/audio/speech`).
 - [ ] Create endpoint `GET /api/models` with search/filter proxy support.
 - [ ] Implement `POST /api/documents/{id}/blocks/{block_id}/audio`:
   - Compute cache key: `sha256(block_text + voice + model + speed)`.
