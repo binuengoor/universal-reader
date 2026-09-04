@@ -8,7 +8,7 @@
 - [x] Verify setup by querying `GET /api/health` on port 9025.
 
 ## Phase 2: Ingestion & Parsing Engine
-- [ ] Install ingestion libraries (`pymupdf`, `ebooklib`, `python-docx`, `trafilatura`, `beautifulsoup4`).
+- [x] Install ingestion libraries (`pymupdf`, `ebooklib`, `python-docx`, `trafilatura`, `beautifulsoup4`).
 - [ ] Implement text parsers for PDF, ePub, DOCX, and raw text.
 - [ ] Implement URL extraction route `POST /api/documents/url` with `trafilatura`.
 - [ ] Implement file upload route `POST /api/documents/upload`.
