@@ -1,7 +1,7 @@
 # Implementation Checklist
 
 ## Phase 1: Environment & Project Scaffolding
-- [ ] Initialize Git repository (if uninitialized) and configure `.gitignore` for Python, Node, and `/data/`.
+- [x] Initialize Git repository (if uninitialized) and configure `.gitignore` for Python, Node, and `/data/`.
 - [ ] Scaffold FastAPI backend directory (`/backend`) with dependencies (`fastapi`, `uvicorn`, `pydantic`, `httpx`).
 - [ ] Scaffold Vite frontend directory (`/frontend`) with Tailwind CSS.
 - [ ] Implement reverse proxy / static mount so port 9025 serves both backend API (`/api/*`) and frontend SPA.
