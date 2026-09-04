@@ -228,6 +228,42 @@ async def delete_document(doc_id: str):
     shutil.rmtree(doc_dir)
     return {"status": "deleted", "id": doc_id}
 
+@router.delete("/{doc_id}/cache")
+async def invalidate_document_cache(doc_id: str):
+    """Invalidate all cached audio files for a document."""
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    if not os.path.exists(doc_dir):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    cache_dir = os.path.join(doc_dir, "audio_cache")
+    count = 0
+    if os.path.exists(cache_dir):
+        for filename in os.listdir(cache_dir):
+            file_path = os.path.join(cache_dir, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                count += 1
+    return {"status": "cache_invalidated", "id": doc_id, "files_removed": count}
+
+@router.delete("/{doc_id}/blocks/{block_id}/cache")
+async def invalidate_block_cache(doc_id: str, block_id: int):
+    """Invalidate cached audio files for a specific block."""
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    if not os.path.exists(doc_dir):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    cache_dir = os.path.join(doc_dir, "audio_cache")
+    count = 0
+    prefix = f"{block_id}_"
+    if os.path.exists(cache_dir):
+        for filename in os.listdir(cache_dir):
+            if filename.startswith(prefix) and filename.endswith(".mp3"):
+                file_path = os.path.join(cache_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    count += 1
+    return {"status": "block_cache_invalidated", "doc_id": doc_id, "block_id": block_id, "files_removed": count}
+
 @router.post("/create")
 async def create_document(req: CreateDocRequest):
     """Create document from scratchpad text."""
