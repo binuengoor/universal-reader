@@ -4,7 +4,7 @@ import ReaderView from './components/ReaderView';
 import AudioPlayer from './components/AudioPlayer';
 import DocumentEditor from './components/DocumentEditor';
 import SettingsModal from './components/SettingsModal';
-import { prefetchBlockAudio } from './utils/audioPrefetch';
+import { priorityAudioQueue } from './utils/priorityAudioQueue';
 
 export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
@@ -84,18 +84,41 @@ export default function App() {
     }
   }, [selectedDocId, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying, currentAudioSrc]);
 
-  // Lookahead sliding window prefetch for blocks N+1 and N+2 (queued sequentially)
+  // Lookahead sliding window prefetch for blocks N+1 and N+2 (priority 5)
   useEffect(() => {
-    if (!selectedDocId || activeBlockId === null || !isPlaying) return;
+    if (!selectedDocId || activeBlockId === null) return;
+
+    // Save reading progress in localStorage
+    try {
+      localStorage.setItem(`read_progress_${selectedDocId}`, activeBlockId.toString());
+    } catch {
+      // ignore
+    }
+
+    if (!isPlaying) return;
 
     const next1 = activeBlockId + 1;
     const next2 = activeBlockId + 2;
 
     if (next1 < totalBlocks) {
-      prefetchBlockAudio(selectedDocId, next1, selectedVoice, selectedModel, playbackSpeed);
+      priorityAudioQueue.enqueue({
+        docId: selectedDocId,
+        blockId: next1,
+        voice: selectedVoice,
+        model: selectedModel,
+        speed: playbackSpeed,
+        priority: 5,
+      });
     }
     if (next2 < totalBlocks) {
-      prefetchBlockAudio(selectedDocId, next2, selectedVoice, selectedModel, playbackSpeed);
+      priorityAudioQueue.enqueue({
+        docId: selectedDocId,
+        blockId: next2,
+        voice: selectedVoice,
+        model: selectedModel,
+        speed: playbackSpeed,
+        priority: 5,
+      });
     }
   }, [selectedDocId, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel, playbackSpeed]);
 

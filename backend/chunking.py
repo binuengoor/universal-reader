@@ -3,7 +3,7 @@ import re
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # Base storage directory: defaults to data/documents in the project root
 BASE_DATA_DIR = os.environ.get("DATA_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "documents")))
@@ -101,7 +101,7 @@ def chunk_text(text: str, min_chars: int = 250, max_chars: int = 500) -> List[Di
 
     return chunks
 
-def save_document(doc_id: str, title: str, source_type: str, text: str, chunks: List[Dict]) -> str:
+def save_document(doc_id: str, title: str, source_type: str, text: str, chunks: List[Dict], tags: Optional[List[str]] = None) -> str:
     """Save document metadata, raw markdown, and chunks in the storage directory."""
     doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
     os.makedirs(doc_dir, exist_ok=True)
@@ -111,6 +111,7 @@ def save_document(doc_id: str, title: str, source_type: str, text: str, chunks: 
         "id": doc_id,
         "title": title,
         "source_type": source_type,
+        "tags": [t.strip().lower() for t in (tags or []) if t and t.strip()],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "block_count": len(chunks),
         "total_chars": len(text)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BookOpen, 
   Upload, 
@@ -12,13 +12,28 @@ import {
   AlertCircle,
   X,
   Settings,
-  FileEdit
+  FileEdit,
+  Search,
+  CheckSquare,
+  Square,
+  ArrowUpDown,
+  Tag,
+  Headphones
 } from 'lucide-react';
 
 export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Search, Tags & Sorting
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState('all');
+  const [sortBy, setSortBy] = useState('newest'); // 'newest' | 'oldest' | 'title' | 'length'
+
+  // Bulk selection
+  const [selectedDocIds, setSelectedDocIds] = useState(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // Intake modals
   const [activeModal, setActiveModal] = useState(null); // 'upload' | 'url' | 'scratch'
@@ -30,6 +45,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   const [customTitle, setCustomTitle] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [scratchContent, setScratchContent] = useState('');
+  const [scratchTags, setScratchTags] = useState('');
 
   const fetchDocuments = async (showLoading = true) => {
     try {
@@ -64,6 +80,97 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     return () => { ignore = true; };
   }, []);
 
+  // Compute all unique tags with count
+  const allTagsWithCount = useMemo(() => {
+    const map = new Map();
+    documents.forEach((doc) => {
+      if (doc.tags && Array.isArray(doc.tags)) {
+        doc.tags.forEach((t) => {
+          map.set(t, (map.get(t) || 0) + 1);
+        });
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [documents]);
+
+  // Filter & Sort Documents
+  const filteredAndSortedDocuments = useMemo(() => {
+    return documents
+      .filter((doc) => {
+        // Tag filter
+        if (selectedTag !== 'all') {
+          if (!doc.tags || !doc.tags.includes(selectedTag)) {
+            return false;
+          }
+        }
+        // Search query
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const title = (doc.title || '').toLowerCase();
+          const excerpt = (doc.excerpt || '').toLowerCase();
+          const tagsMatch = doc.tags && doc.tags.some((t) => t.toLowerCase().includes(q));
+          return title.includes(q) || excerpt.includes(q) || tagsMatch;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'newest') {
+          return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+        } else if (sortBy === 'oldest') {
+          return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        } else if (sortBy === 'title') {
+          return (a.title || '').localeCompare(b.title || '');
+        } else if (sortBy === 'length') {
+          return (b.total_chars || 0) - (a.total_chars || 0);
+        }
+        return 0;
+      });
+  }, [documents, selectedTag, searchQuery, sortBy]);
+
+  // Bulk selection helpers
+  const toggleSelectDoc = (id, e) => {
+    e.stopPropagation();
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllVisible = () => {
+    if (selectedDocIds.size === filteredAndSortedDocuments.length && filteredAndSortedDocuments.length > 0) {
+      setSelectedDocIds(new Set());
+    } else {
+      setSelectedDocIds(new Set(filteredAndSortedDocuments.map((d) => d.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedDocIds.size === 0) return;
+    const count = selectedDocIds.size;
+    if (!window.confirm(`Are you sure you want to delete ${count} selected document${count > 1 ? 's' : ''}?`)) {
+      return;
+    }
+
+    try {
+      setIsBulkDeleting(true);
+      const res = await fetch('/api/documents/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc_ids: Array.from(selectedDocIds) }),
+      });
+      if (!res.ok) throw new Error('Bulk delete failed');
+
+      setDocuments((prev) => prev.filter((d) => !selectedDocIds.has(d.id)));
+      setSelectedDocIds(new Set());
+    } catch (err) {
+      alert(err.message || 'Error during bulk delete');
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const handleDelete = async (docId, title, e) => {
     e.stopPropagation();
     if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
@@ -72,6 +179,11 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
       const res = await fetch(`/api/documents/${docId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete document');
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      setSelectedDocIds((prev) => {
+        const next = new Set(prev);
+        next.delete(docId);
+        return next;
+      });
     } catch (err) {
       alert(err.message || 'Could not delete document');
     }
@@ -115,12 +227,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     setIsSubmitting(true);
     setModalError(null);
     try {
+      const parsedTags = scratchTags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
       const res = await fetch('/api/documents/url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: urlInput.trim(),
           title: customTitle.trim() || undefined,
+          tags: parsedTags,
         }),
       });
       const data = await res.json();
@@ -145,12 +259,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     setIsSubmitting(true);
     setModalError(null);
     try {
+      const parsedTags = scratchTags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
       const res = await fetch('/api/documents/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: scratchContent.trim(),
           title: customTitle.trim() || undefined,
+          tags: parsedTags,
         }),
       });
       const data = await res.json();
@@ -175,6 +291,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     setCustomTitle('');
     setUrlInput('');
     setScratchContent('');
+    setScratchTags('');
   };
 
   const formatDate = (isoStr) => {
@@ -185,12 +302,32 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         month: 'short',
         day: 'numeric',
         year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
       });
     } catch {
       return isoStr;
     }
+  };
+
+  const estimateListenTime = (totalChars) => {
+    if (!totalChars) return '< 1 min';
+    // ~5 chars per word, ~150 words per minute speech rate
+    const words = totalChars / 5;
+    const minutes = Math.max(1, Math.round(words / 150));
+    return `${minutes} min`;
+  };
+
+  const getReadingProgress = (docId, totalBlocks) => {
+    if (!totalBlocks || totalBlocks <= 0) return 0;
+    try {
+      const saved = localStorage.getItem(`read_progress_${docId}`);
+      if (saved) {
+        const lastBlock = parseInt(saved, 10);
+        return Math.min(100, Math.round(((lastBlock + 1) / totalBlocks) * 100));
+      }
+    } catch {
+      // ignore
+    }
+    return 0;
   };
 
   const getBadgeColor = (type) => {
@@ -209,7 +346,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-16">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-20">
       {/* Top Navigation */}
       <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur sticky top-0 z-30 px-6 py-4">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
@@ -226,30 +363,34 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
           {/* Quick Intake Actions */}
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => setActiveModal('upload')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700"
+              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
             >
               <Upload className="w-4 h-4 text-zinc-300" />
               Upload File
             </button>
             <button
+              type="button"
               onClick={() => setActiveModal('url')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700"
+              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
             >
               <LinkIcon className="w-4 h-4 text-purple-400" />
               Ingest URL
             </button>
             <button
+              type="button"
               onClick={() => setActiveModal('scratch')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition shadow-sm"
+              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition shadow-sm cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               New Text
             </button>
             {onOpenSettings && (
               <button
+                type="button"
                 onClick={onOpenSettings}
-                className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-1"
+                className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-1 cursor-pointer"
                 title="TTS & Service Settings"
               >
                 <Settings className="w-4 h-4" />
@@ -260,14 +401,113 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-6 pt-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-semibold">Library</h2>
-            <p className="text-sm text-zinc-400">
-              {documents.length} document{documents.length === 1 ? '' : 's'} available
-            </p>
+      <main className="max-w-6xl mx-auto px-6 pt-6">
+        {/* Search, Filter & Bulk Action Toolbar */}
+        <div className="space-y-4 mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[240px] max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-400" />
+              <input
+                type="text"
+                placeholder="Search by title, excerpt, or #tag..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Sort & Bulk Select Toolbar */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 text-xs text-zinc-300">
+                <ArrowUpDown className="w-3.5 h-3.5 text-zinc-400 mr-1.5" />
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="bg-transparent text-xs text-zinc-200 focus:outline-none cursor-pointer"
+                >
+                  <option value="newest" className="bg-zinc-900">Newest First</option>
+                  <option value="oldest" className="bg-zinc-900">Oldest First</option>
+                  <option value="title" className="bg-zinc-900">Title (A–Z)</option>
+                  <option value="length" className="bg-zinc-900">Length (Longest)</option>
+                </select>
+              </div>
+
+              {filteredAndSortedDocuments.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSelectAllVisible}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs font-medium text-zinc-300 transition cursor-pointer"
+                  title="Select All Visible"
+                >
+                  {selectedDocIds.size === filteredAndSortedDocuments.length && filteredAndSortedDocuments.length > 0 ? (
+                    <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5 text-zinc-400" />
+                  )}
+                  <span>Select All</span>
+                </button>
+              )}
+
+              {selectedDocIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={isBulkDeleting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 rounded-xl text-xs font-semibold transition cursor-pointer"
+                >
+                  {isBulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>Delete Selected ({selectedDocIds.size})</span>
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Tag Filter Pills */}
+          {allTagsWithCount.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <span className="text-xs text-zinc-500 flex items-center gap-1 mr-1 flex-shrink-0">
+                <Tag className="w-3 h-3" /> Tags:
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedTag('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer flex-shrink-0 border ${
+                  selectedTag === 'all'
+                    ? 'bg-indigo-600 border-indigo-500 text-white'
+                    : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                }`}
+              >
+                All ({documents.length})
+              </button>
+              {allTagsWithCount.map(([tag, count]) => {
+                const isActive = selectedTag === tag;
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setSelectedTag(isActive ? 'all' : tag)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer flex-shrink-0 border ${
+                      isActive
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                    }`}
+                  >
+                    #{tag} <span className="text-[10px] opacity-60">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Loading / Error States */}
@@ -286,100 +526,184 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         )}
 
         {/* Empty State */}
-        {!loading && !error && documents.length === 0 && (
+        {!loading && !error && filteredAndSortedDocuments.length === 0 && (
           <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center bg-zinc-900/20">
             <div className="w-14 h-14 rounded-2xl bg-zinc-800/80 flex items-center justify-center text-zinc-400 mb-4">
               <Layers className="w-7 h-7" />
             </div>
-            <h3 className="text-lg font-medium text-zinc-200">No documents yet</h3>
+            <h3 className="text-lg font-medium text-zinc-200">
+              {documents.length === 0 ? 'No documents yet' : 'No matching documents'}
+            </h3>
             <p className="text-sm text-zinc-400 max-w-md mt-1 mb-6">
-              Add a PDF, ePub, Word document, web article URL, or paste Markdown text to start reading and listening.
+              {documents.length === 0
+                ? 'Add a PDF, ePub, Word document, web article URL, or paste Markdown text to start reading and listening.'
+                : 'Try clearing your search query or selecting a different tag filter.'}
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-3">
+            {documents.length === 0 ? (
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal('upload')}
+                  className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" /> Upload Document
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveModal('url')}
+                  className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+                >
+                  <LinkIcon className="w-4 h-4 text-purple-400" /> Ingest Article URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveModal('scratch')}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" /> Paste Text
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => setActiveModal('upload')}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700"
+                type="button"
+                onClick={() => { setSearchQuery(''); setSelectedTag('all'); }}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold rounded-lg text-zinc-200 transition cursor-pointer"
               >
-                <Upload className="w-4 h-4" /> Upload Document
+                Reset Filters
               </button>
-              <button
-                onClick={() => setActiveModal('url')}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700"
-              >
-                <LinkIcon className="w-4 h-4 text-purple-400" /> Ingest Article URL
-              </button>
-              <button
-                onClick={() => setActiveModal('scratch')}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition"
-              >
-                <FileText className="w-4 h-4" /> Paste Text
-              </button>
-            </div>
+            )}
           </div>
         )}
 
         {/* Document Grid */}
-        {!loading && !error && documents.length > 0 && (
+        {!loading && !error && filteredAndSortedDocuments.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => onSelectDocument && onSelectDocument(doc.id)}
-                className="group relative bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-xl p-5 transition cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span
-                      className={`text-xs px-2.5 py-0.5 rounded-full uppercase font-semibold tracking-wider border ${getBadgeColor(
-                        doc.source_type
-                      )}`}
-                    >
-                      {doc.source_type || 'text'}
-                    </span>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                      {onEditDocument && (
+            {filteredAndSortedDocuments.map((doc) => {
+              const isSelected = selectedDocIds.has(doc.id);
+              const readProgress = getReadingProgress(doc.id, doc.block_count);
+
+              return (
+                <div
+                  key={doc.id}
+                  onClick={() => onSelectDocument && onSelectDocument(doc.id)}
+                  className={`group relative bg-zinc-900/60 hover:bg-zinc-900 border rounded-2xl p-5 transition cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md ${
+                    isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-zinc-800 hover:border-zinc-700'
+                  }`}
+                >
+                  <div>
+                    {/* Card Top Row: Checkbox, Badge & Actions */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
                         <button
-                          title="Edit document"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditDocument(doc.id);
-                          }}
-                          className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition"
+                          type="button"
+                          onClick={(e) => toggleSelectDoc(doc.id, e)}
+                          className="text-zinc-500 hover:text-indigo-400 transition cursor-pointer"
+                          title="Select document"
                         >
-                          <FileEdit className="w-4 h-4" />
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-400" />
+                          ) : (
+                            <Square className="w-4 h-4 opacity-40 group-hover:opacity-100" />
+                          )}
                         </button>
-                      )}
-                      <button
-                        title="Delete document"
-                        onClick={(e) => handleDelete(doc.id, doc.title, e)}
-                        className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                        <span
+                          className={`text-xs px-2.5 py-0.5 rounded-full uppercase font-semibold tracking-wider border ${getBadgeColor(
+                            doc.source_type
+                          )}`}
+                        >
+                          {doc.source_type || 'text'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                        {onEditDocument && (
+                          <button
+                            type="button"
+                            title="Edit document"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditDocument(doc.id);
+                            }}
+                            className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition cursor-pointer"
+                          >
+                            <FileEdit className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title="Delete document"
+                          onClick={(e) => handleDelete(doc.id, doc.title, e)}
+                          className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <h3 className="font-semibold text-zinc-100 group-hover:text-indigo-400 transition line-clamp-2 mb-2">
+                      {doc.title}
+                    </h3>
+
+                    <p className="text-xs text-zinc-400 line-clamp-3 leading-relaxed mb-3">
+                      {doc.excerpt || 'No preview available.'}
+                    </p>
+
+                    {/* Tags */}
+                    {doc.tags && doc.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {doc.tags.map((t) => (
+                          <span
+                            key={t}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTag(t);
+                            }}
+                            className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-400 hover:bg-indigo-500/20 hover:text-indigo-300 transition"
+                          >
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    {/* Reading progress bar */}
+                    {readProgress > 0 && (
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1 font-mono">
+                          <span>Progress</span>
+                          <span>{readProgress}% read</span>
+                        </div>
+                        <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-indigo-500 rounded-full"
+                            style={{ width: `${readProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs text-zinc-500">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{formatDate(doc.created_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1" title="Estimated Listening Time">
+                          <Headphones className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>~{estimateListenTime(doc.total_chars)}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>{doc.block_count || 0} blk</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  <h3 className="font-semibold text-zinc-100 group-hover:text-indigo-400 transition line-clamp-2 mb-2">
-                    {doc.title}
-                  </h3>
-
-                  <p className="text-xs text-zinc-400 line-clamp-3 leading-relaxed mb-4">
-                    {doc.excerpt || 'No preview available.'}
-                  </p>
                 </div>
-
-                <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs text-zinc-500">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{formatDate(doc.created_at)}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>{doc.block_count || 0} blocks</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
@@ -389,8 +713,9 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
             <button
+              type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -430,14 +755,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition"
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!fileToUpload || isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition"
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition cursor-pointer"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                   Upload & Process
@@ -453,8 +778,9 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
             <button
+              type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -491,18 +817,29 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">Tags (comma-separated)</label>
+                <input
+                  type="text"
+                  placeholder="news, tech, research"
+                  value={scratchTags}
+                  onChange={(e) => setScratchTags(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition"
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!urlInput.trim() || isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition"
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition cursor-pointer"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
                   Fetch & Parse
@@ -518,8 +855,9 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
             <button
+              type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -545,6 +883,17 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               </div>
 
               <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">Tags (comma-separated)</label>
+                <input
+                  type="text"
+                  placeholder="notes, ai, ideas"
+                  value={scratchTags}
+                  onChange={(e) => setScratchTags(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-zinc-300 mb-1">Text Content</label>
                 <textarea
                   required
@@ -560,14 +909,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition"
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!scratchContent.trim() || isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition"
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition cursor-pointer"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                   Save to Library

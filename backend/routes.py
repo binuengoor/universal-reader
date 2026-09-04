@@ -168,14 +168,20 @@ async def test_upstream_tts(req: SettingsPayload):
 class CreateDocRequest(BaseModel):
     title: Optional[str] = None
     content: str
+    tags: Optional[List[str]] = None
 
 class UpdateDocRequest(BaseModel):
     title: Optional[str] = None
     content: str
+    tags: Optional[List[str]] = None
 
 class UrlDocRequest(BaseModel):
     url: str
     title: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class BulkDeleteRequest(BaseModel):
+    doc_ids: List[str]
 
 class BlockAudioRequest(BaseModel):
     voice: str = "alloy"
@@ -272,6 +278,9 @@ async def update_document(doc_id: str, req: UpdateDocRequest):
 
     if req.title and req.title.strip():
         meta["title"] = req.title.strip()
+
+    if req.tags is not None:
+        meta["tags"] = [t.strip().lower() for t in req.tags if t and t.strip()]
 
     chunks = chunk_text(content)
     if not chunks:
@@ -407,6 +416,25 @@ async def get_block_audio(
         response_format=response_format
     )
 
+@router.post("/bulk-delete")
+async def bulk_delete_documents(req: BulkDeleteRequest):
+    """Bulk delete documents and their cached files."""
+    deleted_ids = []
+    not_found_ids = []
+    for doc_id in req.doc_ids:
+        doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+        if os.path.exists(doc_dir):
+            shutil.rmtree(doc_dir)
+            deleted_ids.append(doc_id)
+        else:
+            not_found_ids.append(doc_id)
+    return {
+        "status": "bulk_deleted",
+        "deleted_count": len(deleted_ids),
+        "deleted_ids": deleted_ids,
+        "not_found_ids": not_found_ids
+    }
+
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str):
     """Delete a document and all its cached audio."""
@@ -416,6 +444,80 @@ async def delete_document(doc_id: str):
 
     shutil.rmtree(doc_dir)
     return {"status": "deleted", "id": doc_id}
+
+@router.get("/{doc_id}/export-audio")
+async def export_full_audio(
+    doc_id: str,
+    voice: str = "en-US-ChristopherNeural",
+    model: str = "edge-tts",
+    speed: float = 1.0
+):
+    """
+    Concatenate all cached audio blocks for this document and return a single .mp3 download.
+    Synthesizes any missing blocks on demand.
+    """
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    if not os.path.isdir(doc_dir):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    chunks_path = os.path.join(doc_dir, "chunks.json")
+    meta_path = os.path.join(doc_dir, "meta.json")
+    if not os.path.exists(chunks_path) or not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail="Document data not found")
+
+    with open(chunks_path, "r", encoding="utf-8") as f:
+        chunks = json.load(f)
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Document has no blocks")
+
+    cache_dir = os.path.join(doc_dir, "audio_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    # Gather or synthesize all blocks
+    combined_audio = bytearray()
+    for chunk in chunks:
+        block_id = chunk["id"]
+        block_text = chunk.get("text", "").strip()
+        if not block_text:
+            continue
+
+        filename = get_audio_filename(block_id, voice, model, speed, block_text)
+        file_path = os.path.join(cache_dir, filename)
+
+        if not (os.path.exists(file_path) and os.path.getsize(file_path) > 0):
+            audio_bytes = await tts_client.synthesize(
+                text=block_text,
+                voice=voice,
+                model=model,
+                speed=speed,
+                response_format="mp3"
+            )
+            with open(file_path, "wb") as f:
+                f.write(audio_bytes)
+        else:
+            with open(file_path, "rb") as f:
+                audio_bytes = f.read()
+
+        combined_audio.extend(audio_bytes)
+
+    # Clean title for filename
+    raw_title = meta.get("title", "audiobook")
+    safe_title = "".join(c for c in raw_title if c.isalnum() or c in (" ", "_", "-")).strip() or "document"
+    export_filename = f"{safe_title}.mp3"
+
+    export_path = os.path.join(cache_dir, f"_export_{voice}_{model}_{speed}.mp3")
+    with open(export_path, "wb") as f:
+        f.write(combined_audio)
+
+    return FileResponse(
+        path=export_path,
+        media_type="audio/mpeg",
+        filename=export_filename,
+        headers={"Content-Disposition": f'attachment; filename="{export_filename}"'}
+    )
 
 @router.delete("/{doc_id}/cache")
 async def invalidate_document_cache(doc_id: str):
@@ -467,8 +569,8 @@ async def create_document(req: CreateDocRequest):
         raise HTTPException(status_code=400, detail="Unable to extract meaningful text")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "text", content, chunks)
-    return {"id": doc_id, "title": title, "block_count": len(chunks)}
+    save_document(doc_id, title, "text", content, chunks, tags=req.tags)
+    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": req.tags or []}
 
 @router.post("/url")
 async def ingest_url(req: UrlDocRequest):
@@ -479,21 +581,18 @@ async def ingest_url(req: UrlDocRequest):
 
     downloaded = trafilatura.fetch_url(url)
     if not downloaded:
-        raise HTTPException(status_code=400, detail="Failed to fetch content from URL")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch content from URL: {url}")
 
-    extracted = trafilatura.extract(
-        downloaded,
-        output_format="markdown",
-        include_links=False,
-        include_images=False,
-        with_metadata=True
-    )
+    extracted = trafilatura.extract(downloaded, include_comments=False, output_format="txt")
     if not extracted or not extracted.strip():
-        raise HTTPException(status_code=400, detail="No readable article content found at URL")
+        raise HTTPException(status_code=400, detail="Could not extract readable article text from this URL")
 
-    # Extract metadata title if available
-    metadata = trafilatura.extract_metadata(downloaded)
-    title = req.title or (metadata.title if metadata and metadata.title else None)
+    title = req.title.strip() if (req.title and req.title.strip()) else None
+    if not title:
+        metadata = trafilatura.extract_metadata(downloaded)
+        if metadata and metadata.title:
+            title = metadata.title.strip()
+
     if not title:
         now = datetime.now()
         title = f"Web - {url.split('//')[-1].split('/')[0]} ({now.strftime('%Y-%m-%d')})"
@@ -503,8 +602,8 @@ async def ingest_url(req: UrlDocRequest):
         raise HTTPException(status_code=400, detail="Extracted content is too short or empty")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "url", extracted, chunks)
-    return {"id": doc_id, "title": title, "block_count": len(chunks)}
+    save_document(doc_id, title, "url", extracted, chunks, tags=req.tags)
+    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": req.tags or []}
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), title: Optional[str] = Form(None)):

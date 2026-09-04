@@ -46,4 +46,14 @@
 - [x] Wire Edit & Settings triggers in Library View and Reader View headers.
 - [x] Rebuild container and verify end-to-end functionality on port 9025.
 
+## Phase 7: Library Management, Tags, Prioritized Full Audio & Export
+- [x] Implement backend tags support in `meta.json` (`CreateDocRequest`, `UpdateDocRequest`, `GET /api/documents`).
+- [x] Implement bulk deletion endpoint `POST /api/documents/bulk-delete` in backend.
+- [x] Implement full document audio concatenation / download endpoint `GET /api/documents/{doc_id}/export-audio`.
+- [x] Update `DocumentEditor.jsx` to support tag creation and removal.
+- [x] Build prioritized audio scheduler (`frontend/src/utils/priorityAudioQueue.js`) with low-priority background whole-note generation that pauses for high-priority foreground playback.
+- [x] Update `LibraryView.jsx` with search bar, tag filtering chips, sort options, bulk selection/delete mode, estimated listening times, and reading progress bars.
+- [x] Update `ReaderView.jsx` and `AudioPlayer.jsx` with "Generate All Audio" button, background progress pill, and "Download MP3" action.
+- [x] Verify functionality with automated tests, oxlint, build, and live Docker verification on port 3003.
+
 

@@ -12,8 +12,11 @@ import {
   ChevronDown,
   X,
   Check,
-  Globe2
+  Globe2,
+  Sparkles,
+  Download
 } from 'lucide-react';
+import { priorityAudioQueue } from '../utils/priorityAudioQueue';
 
 export default function AudioPlayer({
   docId,
@@ -39,12 +42,22 @@ export default function AudioPlayer({
   const [voices, setVoices] = useState([]);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState('');
   
-  // Multi-select engine filter toggles (push-on, push-off buttons)
+  // Multi-select engine filter toggles
   const [selectedEngines, setSelectedEngines] = useState(['edge-tts', 'kokoro', 'piper']);
-  // Language filter
   const [selectedLanguage, setSelectedLanguage] = useState('all');
 
+  // Full note audio generation state
+  const [queueStatus, setQueueStatus] = useState(() => priorityAudioQueue.getStatus());
+  const [isExporting, setIsExporting] = useState(false);
+
   const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+  useEffect(() => {
+    const unsubscribe = priorityAudioQueue.subscribe((status) => {
+      setQueueStatus(status);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -64,7 +77,7 @@ export default function AudioPlayer({
           setVoices(formatted);
         }
       } catch {
-        // Fallback popular voices
+        // ignore
       }
     };
 
@@ -74,13 +87,11 @@ export default function AudioPlayer({
     };
   }, []);
 
-  // Available unique engines in the voice list
   const availableEngines = useMemo(() => {
     const set = new Set(voices.map((v) => v.engine).filter(Boolean));
     return Array.from(set).length > 0 ? Array.from(set) : ['edge-tts', 'kokoro', 'piper'];
   }, [voices]);
 
-  // Available languages
   const availableLanguages = useMemo(() => {
     const map = new Map();
     voices.forEach((v) => {
@@ -93,11 +104,9 @@ export default function AudioPlayer({
     return sorted;
   }, [voices]);
 
-  // Toggle single engine on/off
   const toggleEngine = (engine) => {
     setSelectedEngines((prev) => {
       if (prev.includes(engine)) {
-        // Do not allow deselecting all if only 1 is left, unless intentional
         if (prev.length === 1) return prev;
         return prev.filter((e) => e !== engine);
       } else {
@@ -116,18 +125,14 @@ export default function AudioPlayer({
     }
   };
 
-  // Filter voices based on multi-select engines, language, and search query
   const filteredVoices = useMemo(() => {
     return voices.filter((v) => {
-      // 1. Engine filter
       if (selectedEngines.length > 0 && !selectedEngines.includes(v.engine)) {
         return false;
       }
-      // 2. Language filter
       if (selectedLanguage !== 'all' && v.language.toLowerCase() !== selectedLanguage.toLowerCase()) {
         return false;
       }
-      // 3. Search query
       if (voiceSearchQuery.trim()) {
         const q = voiceSearchQuery.toLowerCase();
         const id = (v.id || '').toLowerCase();
@@ -140,7 +145,6 @@ export default function AudioPlayer({
     });
   }, [voices, selectedEngines, selectedLanguage, voiceSearchQuery]);
 
-  // Find currently selected voice object for detailed label display
   const currentVoiceObj = useMemo(() => {
     return voices.find((v) => v.id === selectedVoice);
   }, [voices, selectedVoice]);
@@ -172,15 +176,67 @@ export default function AudioPlayer({
     }
   };
 
+  // Trigger background generation for all blocks
+  const handleGenerateFullAudio = () => {
+    if (!docId || totalBlocks <= 0) return;
+    priorityAudioQueue.enqueueFullDocument(docId, totalBlocks, selectedVoice, selectedModel, playbackSpeed);
+  };
+
+  const handleCancelFullAudio = () => {
+    if (!docId) return;
+    priorityAudioQueue.cancelFullDocument(docId);
+  };
+
+  // Download entire concatenated audio
+  const handleDownloadFullAudio = () => {
+    if (!docId) return;
+    setIsExporting(true);
+    const url = `/api/documents/${docId}/export-audio?voice=${encodeURIComponent(
+      selectedVoice
+    )}&model=${encodeURIComponent(selectedModel)}&speed=${playbackSpeed}`;
+    
+    // Direct browser navigation triggers file download
+    window.location.href = url;
+    setTimeout(() => {
+      setIsExporting(false);
+    }, 2000);
+  };
+
   const displayBlockIndex = currentBlock !== null && currentBlock !== undefined ? currentBlock : 0;
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   const isReadyToPlay = Boolean(docId && totalBlocks > 0);
+
+  const fullTask = queueStatus.fullDocTask;
+  const isThisDocGenerating = fullTask && fullTask.docId === docId && !fullTask.cancelled;
+  const fullPercent = isThisDocGenerating && fullTask.total > 0 
+    ? Math.round((fullTask.completed / fullTask.total) * 100) 
+    : 0;
 
   return (
     <>
       <div className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-4xl z-40 transition-all duration-200">
         <div className="bg-zinc-950/90 hover:bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 rounded-2xl p-3 sm:p-4 shadow-2xl text-zinc-100 flex flex-col gap-2.5">
-          {/* Progress bar */}
+          {/* Top Progress / Background Generation Banner */}
+          {isThisDocGenerating && (
+            <div className="flex items-center justify-between text-[11px] bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-indigo-300">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+                <span>
+                  Generating full note audio: {fullTask.completed} / {fullTask.total} blocks ({fullPercent}%)
+                </span>
+                <span className="text-[10px] opacity-60">· Lower priority background task</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelFullAudio}
+                className="text-xs text-zinc-400 hover:text-red-400 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Audio Track Progress Bar */}
           <div
             onClick={handleProgressClick}
             className="w-full h-1.5 bg-zinc-800 hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative group"
@@ -264,8 +320,32 @@ export default function AudioPlayer({
               </button>
             </div>
 
-            {/* Right: Speed & Voice / Model settings */}
-            <div className="flex items-center gap-2">
+            {/* Right: Actions, Speed & Voice / Model settings */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Generate Full Audio button */}
+              <button
+                type="button"
+                onClick={isThisDocGenerating ? handleCancelFullAudio : handleGenerateFullAudio}
+                disabled={!isReadyToPlay}
+                className="hidden md:flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium text-zinc-300 hover:text-indigo-300 transition cursor-pointer"
+                title="Pre-generate audio for all blocks in background"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <span>{isThisDocGenerating ? 'Stop Full Gen' : 'Gen All'}</span>
+              </button>
+
+              {/* Download MP3 button */}
+              <button
+                type="button"
+                onClick={handleDownloadFullAudio}
+                disabled={!isReadyToPlay || isExporting}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium text-zinc-300 hover:text-white transition cursor-pointer"
+                title="Download full document as single MP3"
+              >
+                {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">MP3</span>
+              </button>
+
               {/* Speed selector */}
               <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
                 <select
@@ -286,14 +366,14 @@ export default function AudioPlayer({
               <button
                 type="button"
                 onClick={() => setShowModelModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition cursor-pointer max-w-[220px]"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition cursor-pointer max-w-[190px]"
                 title="Voice & Engine Configuration"
               >
                 <Sliders className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
                 <span className="truncate">
                   {currentVoiceObj ? (currentVoiceObj.label.split(' - ')[0] || currentVoiceObj.id) : selectedVoice}
                 </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-indigo-300 flex-shrink-0">
+                <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-800 text-indigo-300 flex-shrink-0">
                   {selectedModel}
                 </span>
                 <ChevronDown className="w-3 h-3 opacity-60 flex-shrink-0" />

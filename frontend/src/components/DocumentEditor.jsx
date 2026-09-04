@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2, Tag, X, Plus } from 'lucide-react';
 
 export default function DocumentEditor({ docId, onBack, onSaved }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState('');
+  
   const [originalTitle, setOriginalTitle] = useState('');
   const [originalContent, setOriginalContent] = useState('');
+  const [originalTags, setOriginalTags] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -22,8 +27,12 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
         if (!ignore) {
           setTitle(data.title || '');
           setContent(data.content || '');
+          const loadedTags = data.meta?.tags || [];
+          setTags(loadedTags);
+
           setOriginalTitle(data.title || '');
           setOriginalContent(data.content || '');
+          setOriginalTags(loadedTags);
         }
       } catch (err) {
         if (!ignore) setError(err.message || 'Error loading document');
@@ -40,7 +49,29 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
     };
   }, [docId]);
 
-  const hasChanges = title !== originalTitle || content !== originalContent;
+  const hasChanges = 
+    title !== originalTitle || 
+    content !== originalContent || 
+    JSON.stringify(tags) !== JSON.stringify(originalTags);
+
+  const handleAddTag = () => {
+    const clean = tagInput.trim().toLowerCase().replace(/^#/, '');
+    if (clean && !tags.includes(clean)) {
+      setTags([...tags, clean]);
+      setTagInput('');
+    }
+  };
+
+  const handleTagKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      handleAddTag();
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove) => {
+    setTags(tags.filter((t) => t !== tagToRemove));
+  };
 
   const handleSave = async (e) => {
     e?.preventDefault();
@@ -58,6 +89,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
         body: JSON.stringify({
           title: title.trim() || undefined,
           content: content,
+          tags: tags,
         }),
       });
 
@@ -68,6 +100,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
 
       setOriginalTitle(data.title);
       setOriginalContent(content);
+      setOriginalTags(tags);
 
       if (onSaved) {
         onSaved(docId);
@@ -82,6 +115,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
   const handleReset = () => {
     setTitle(originalTitle);
     setContent(originalContent);
+    setTags(originalTags);
   };
 
   const charCount = content.length;
@@ -105,7 +139,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
           <button
             type="button"
             onClick={onBack}
-            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition"
+            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
             title="Cancel and return"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -127,7 +161,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
               type="button"
               onClick={handleReset}
               disabled={isSaving}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
               title="Reset changes"
             >
               <Undo2 className="w-3.5 h-3.5" />
@@ -139,7 +173,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
             type="button"
             onClick={handleSave}
             disabled={!hasChanges || isSaving}
-            className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition shadow-sm"
+            className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition shadow-sm cursor-pointer"
           >
             {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             Save & Re-chunk
@@ -159,17 +193,66 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
 
       {/* Editor Body */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
-        <div>
-          <label htmlFor="document-title-input" className="block text-xs font-medium text-zinc-400 mb-1.5">Document Title</label>
-          <input
-            id="document-title-input"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Document title"
-            className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-base font-semibold text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="sm:col-span-2">
+            <label htmlFor="document-title-input" className="block text-xs font-medium text-zinc-400 mb-1.5">Document Title</label>
+            <input
+              id="document-title-input"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Document title"
+              className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-base font-semibold text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5 flex items-center gap-1.5">
+              <Tag className="w-3.5 h-3.5 text-zinc-400" />
+              Tags (e.g. ai, tech, news)
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={handleTagKeyDown}
+                placeholder="Add tag and press Enter"
+                className="flex-1 px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+              />
+              <button
+                type="button"
+                onClick={handleAddTag}
+                disabled={!tagInput.trim()}
+                className="px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-xs font-semibold rounded-xl text-zinc-300 transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Tag pills display */}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-zinc-500 mr-1">Tags:</span>
+            {tags.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
+              >
+                #{t}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(t)}
+                  className="p-0.5 hover:bg-indigo-500/20 rounded-md text-indigo-400 hover:text-indigo-200 transition cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="flex-1 flex flex-col min-h-[450px]">
           <div className="flex items-center justify-between mb-1.5 text-xs text-zinc-400">
