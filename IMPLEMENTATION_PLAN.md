@@ -36,3 +36,14 @@
 - [x] Implement continuous playback: auto-advance to next block upon audio termination.
 - [x] Run end-to-end smoke tests on ingestion, playback, and cache persistence.
 
+## Phase 6: Document Editing & Universal TTS Settings Panel
+- [x] Implement backend dynamic config management (`backend/config.py`) storing settings at `/data/config.json`.
+- [x] Implement backend settings endpoints (`GET /api/settings`, `POST /api/settings`, `POST /api/settings/test`).
+- [x] Implement document editing endpoints (`GET /api/documents/{doc_id}/raw` and `PUT /api/documents/{doc_id}`) with re-chunking and audio cache flushing.
+- [x] Implement voice listing endpoint (`GET /api/voices`) proxying 379+ available voices across Edge TTS, Piper, and Kokoro.
+- [x] Build Document Editor interface (`DocumentEditor.jsx`) for modifying title & raw markdown, saving with live re-chunking.
+- [x] Build Settings modal (`SettingsModal.jsx`) for configuring Universal TTS URL, API key, default model (`edge-tts` zero-CPU default), default voice, and connection testing.
+- [x] Wire Edit & Settings triggers in Library View and Reader View headers.
+- [x] Rebuild container and verify end-to-end functionality on port 9025.
+
+

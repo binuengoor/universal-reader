@@ -10,10 +10,12 @@ import {
   Plus, 
   Loader2, 
   AlertCircle,
-  X
+  X,
+  Settings,
+  FileEdit
 } from 'lucide-react';
 
-export default function LibraryView({ onSelectDocument }) {
+export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -244,6 +246,15 @@ export default function LibraryView({ onSelectDocument }) {
               <Plus className="w-4 h-4" />
               New Text
             </button>
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-1"
+                title="TTS & Service Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -325,13 +336,27 @@ export default function LibraryView({ onSelectDocument }) {
                     >
                       {doc.source_type || 'text'}
                     </span>
-                    <button
-                      title="Delete document"
-                      onClick={(e) => handleDelete(doc.id, doc.title, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                      {onEditDocument && (
+                        <button
+                          title="Edit document"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditDocument(doc.id);
+                          }}
+                          className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition"
+                        >
+                          <FileEdit className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        title="Delete document"
+                        onClick={(e) => handleDelete(doc.id, doc.title, e)}
+                        className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   <h3 className="font-semibold text-zinc-100 group-hover:text-indigo-400 transition line-clamp-2 mb-2">

@@ -2,15 +2,16 @@ import os
 import json
 import shutil
 import trafilatura
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
-from .tts import tts_client, get_audio_filename
+from .tts import tts_client, get_audio_filename, UniversalTTSClient
+from .config import load_settings, save_settings
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
@@ -110,7 +111,65 @@ async def get_voices(search: Optional[str] = None, q: Optional[str] = None, engi
         "error": err_msg
     }
 
+settings_router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+class SettingsPayload(BaseModel):
+    tts_base_url: Optional[str] = None
+    tts_api_key: Optional[str] = None
+    tts_default_model: Optional[str] = None
+    tts_default_voice: Optional[str] = None
+    default_model: Optional[str] = None
+    default_voice: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+
+@settings_router.get("")
+async def get_app_settings():
+    """Get current TTS settings."""
+    return load_settings()
+
+@settings_router.post("")
+async def update_app_settings(req: SettingsPayload):
+    """Save updated TTS configuration settings."""
+    data = req.model_dump(exclude_unset=True)
+    if "base_url" in data and "tts_base_url" not in data:
+        data["tts_base_url"] = data["base_url"]
+    if "api_key" in data and "tts_api_key" not in data:
+        data["tts_api_key"] = data["api_key"]
+    if "default_model" in data and "tts_default_model" not in data:
+        data["tts_default_model"] = data["default_model"]
+    if "default_voice" in data and "tts_default_voice" not in data:
+        data["tts_default_voice"] = data["default_voice"]
+    saved = save_settings(data)
+    return {"status": "saved", "settings": saved, **saved}
+
+@settings_router.post("/test")
+async def test_upstream_tts(req: SettingsPayload):
+    """Test connection to upstream TTS service."""
+    current = load_settings()
+    url_candidate = req.tts_base_url or req.base_url or current.get("tts_base_url", "")
+    key_candidate = req.tts_api_key if req.tts_api_key is not None else (req.api_key if req.api_key is not None else current.get("tts_api_key", ""))
+    test_url = (url_candidate or "").rstrip("/")
+    test_client = UniversalTTSClient(base_url=test_url, api_key=key_candidate, timeout=10.0)
+    try:
+        models = await test_client.list_models()
+        model_list = models.get("data", []) if isinstance(models, dict) else (models if isinstance(models, list) else [])
+        voices = await test_client.list_voices()
+        voice_count = len(voices.get("voices", [])) if isinstance(voices, dict) else (len(voices) if isinstance(voices, list) else 0)
+        return {
+            "ok": True,
+            "models": model_list,
+            "voice_count": voice_count,
+            "message": f"Successfully connected to Universal TTS. Found {len(model_list)} models and {voice_count} voices."
+        }
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
 class CreateDocRequest(BaseModel):
+    title: Optional[str] = None
+    content: str
+
+class UpdateDocRequest(BaseModel):
     title: Optional[str] = None
     content: str
 
@@ -173,6 +232,83 @@ async def get_document(doc_id: str):
     return {
         "meta": meta,
         "chunks": chunks
+    }
+
+@router.get("/{doc_id}/raw")
+async def get_raw_document(doc_id: str):
+    """Retrieve raw markdown text for editing."""
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_file = os.path.join(doc_dir, "document.md")
+    meta_file = os.path.join(doc_dir, "meta.json")
+    if not os.path.exists(doc_file) or not os.path.exists(meta_file):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    with open(meta_file, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    with open(doc_file, "r", encoding="utf-8") as f:
+        raw_text = f.read()
+
+    return {
+        "id": doc_id,
+        "title": meta.get("title", ""),
+        "content": raw_text,
+        "meta": meta
+    }
+
+@router.put("/{doc_id}")
+async def update_document(doc_id: str, req: UpdateDocRequest):
+    """Update document raw text and title, re-chunk, and clear outdated cache."""
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    meta_file = os.path.join(doc_dir, "meta.json")
+    if not os.path.exists(doc_dir) or not os.path.exists(meta_file):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+
+    with open(meta_file, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    if req.title and req.title.strip():
+        meta["title"] = req.title.strip()
+
+    chunks = chunk_text(content)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Could not extract readable blocks from content")
+
+    meta["block_count"] = len(chunks)
+    meta["total_chars"] = len(content)
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Write document.md
+    with open(os.path.join(doc_dir, "document.md"), "w", encoding="utf-8") as f:
+        f.write(content)
+
+    # Write chunks.json
+    with open(os.path.join(doc_dir, "chunks.json"), "w", encoding="utf-8") as f:
+        json.dump(chunks, f, indent=2)
+
+    # Write meta.json
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    # Invalidate audio cache since text blocks changed
+    cache_dir = os.path.join(doc_dir, "audio_cache")
+    if os.path.exists(cache_dir):
+        for fname in os.listdir(cache_dir):
+            p = os.path.join(cache_dir, fname)
+            if os.path.isfile(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+
+    return {
+        "id": doc_id,
+        "title": meta.get("title"),
+        "block_count": len(chunks),
+        "status": "updated"
     }
 
 async def _synthesize_or_get_cached_audio(

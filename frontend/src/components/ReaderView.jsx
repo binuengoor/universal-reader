@@ -9,13 +9,15 @@ import {
   ChevronDown,
   Type,
   Play,
-  Pause
+  Pause,
+  FileEdit
 } from 'lucide-react';
 import DisplaySettingsDrawer from './DisplaySettingsDrawer';
 
 export default function ReaderView({
   docId,
   onBack,
+  onEdit,
   activeBlockId,
   isPlaying = false,
   onSelectBlock,
@@ -274,6 +276,17 @@ export default function ReaderView({
             >
               <Search className="w-4 h-4" />
               <span className="hidden sm:inline">Search</span>
+            </button>
+          )}
+
+          {onEdit && (
+            <button
+              onClick={onEdit}
+              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10"
+              title="Edit Document Markdown"
+            >
+              <FileEdit className="w-4 h-4 text-indigo-400" />
+              <span className="hidden sm:inline">Edit</span>
             </button>
           )}
 

@@ -2,10 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import LibraryView from './components/LibraryView';
 import ReaderView from './components/ReaderView';
 import AudioPlayer from './components/AudioPlayer';
+import DocumentEditor from './components/DocumentEditor';
+import SettingsModal from './components/SettingsModal';
 import { prefetchBlockAudio } from './utils/audioPrefetch';
 
 export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
+  const [editingDocId, setEditingDocId] = useState(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeBlockId, setActiveBlockId] = useState(null);
   const [totalBlocks, setTotalBlocks] = useState(0);
 
@@ -205,11 +209,23 @@ export default function App() {
         }}
       />
 
-      {selectedDocId ? (
+      {editingDocId ? (
+        <DocumentEditor
+          docId={editingDocId}
+          onBack={() => setEditingDocId(null)}
+          onSaved={(docId) => {
+            setEditingDocId(null);
+            setSelectedDocId(docId);
+            setActiveBlockId(0);
+            setIsPlaying(false);
+          }}
+        />
+      ) : selectedDocId ? (
         <>
           <ReaderView
             docId={selectedDocId}
             onBack={handleBackToLibrary}
+            onEdit={() => setEditingDocId(selectedDocId)}
             activeBlockId={activeBlockId}
             isPlaying={isPlaying}
             onSelectBlock={(id) => {
@@ -247,8 +263,26 @@ export default function App() {
           />
         </>
       ) : (
-        <LibraryView onSelectDocument={(id) => setSelectedDocId(id)} />
+        <LibraryView
+          onSelectDocument={(id) => setSelectedDocId(id)}
+          onEditDocument={(id) => setEditingDocId(id)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
       )}
+
+      {/* In-App Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSettingsUpdated={(settings) => {
+          if (settings.tts_default_model) {
+            setSelectedModel(settings.tts_default_model);
+          }
+          if (settings.tts_default_voice) {
+            setSelectedVoice(settings.tts_default_voice);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -3,12 +3,13 @@ import httpx
 import hashlib
 from typing import Optional, Dict, Any, List
 from fastapi import HTTPException
+from .config import load_settings
 
 def get_tts_base_url() -> str:
-    return os.environ.get("TTS_BASE_URL", "http://localhost:8000").rstrip("/")
+    return load_settings()["tts_base_url"].rstrip("/")
 
 def get_tts_api_key() -> str:
-    return os.environ.get("TTS_API_KEY", "")
+    return load_settings()["tts_api_key"]
 
 KOKORO_VOICE_MAP = {
     "alloy": "af_alloy",
