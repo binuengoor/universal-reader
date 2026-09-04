@@ -10,7 +10,7 @@ export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [editingDocId, setEditingDocId] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [activeBlockId, setActiveBlockId] = useState(null);
+  const [activeBlockId, setActiveBlockId] = useState(0);
   const [totalBlocks, setTotalBlocks] = useState(0);
 
   // Audio playback state
@@ -20,11 +20,13 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  
+  // Default voice & model - synchronized with backend settings
   const [selectedVoice, setSelectedVoice] = useState(() => {
-    return localStorage.getItem('universal_reader_voice') || 'af_alloy';
+    return localStorage.getItem('universal_reader_voice') || 'en-US-ChristopherNeural';
   });
   const [selectedModel, setSelectedModel] = useState(() => {
-    return localStorage.getItem('universal_reader_model') || 'kokoro';
+    return localStorage.getItem('universal_reader_model') || 'edge-tts';
   });
 
   const audioRef = useRef(null);
@@ -44,6 +46,33 @@ export default function App() {
       contentWidth: 'max-w-3xl',
     };
   });
+
+  // Sync initial defaults from /api/settings on mount if not customized in localStorage
+  useEffect(() => {
+    let ignore = false;
+    const fetchDefaultSettings = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (ignore) return;
+        const storedModel = localStorage.getItem('universal_reader_model');
+        const storedVoice = localStorage.getItem('universal_reader_voice');
+        if (!storedModel && (data.tts_default_model || data.default_model)) {
+          setSelectedModel(data.tts_default_model || data.default_model);
+        }
+        if (!storedVoice && (data.tts_default_voice || data.default_voice)) {
+          setSelectedVoice(data.tts_default_voice || data.default_voice);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchDefaultSettings();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   // Fetch document summary (e.g. block count) when selectedDocId changes
   useEffect(() => {
@@ -78,9 +107,12 @@ export default function App() {
     audioEl.load();
 
     if (isPlaying) {
-      audioEl.play().catch(() => {
-        setIsPlaying(false);
-      });
+      const playPromise = audioEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Play request may fail if user has not interacted or network error
+        });
+      }
     }
   }, [selectedDocId, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying]);
 
@@ -113,8 +145,8 @@ export default function App() {
       audioEl.pause();
       setIsPlaying(false);
     } else {
-      audioEl.play().catch(() => {});
       setIsPlaying(true);
+      audioEl.play().catch(() => {});
     }
   };
 
@@ -173,7 +205,7 @@ export default function App() {
 
   const handleBackToLibrary = () => {
     setSelectedDocId(null);
-    setActiveBlockId(null);
+    setActiveBlockId(0);
     setTotalBlocks(0);
     setIsPlaying(false);
     setCurrentAudioSrc('');
@@ -198,7 +230,12 @@ export default function App() {
           setIsLoadingAudio(false);
           setIsPlaying(true);
         }}
-        onPause={() => setIsPlaying(false)}
+        onPause={() => {
+          // Only sync pause if audio actually ended or stopped
+          if (audioRef.current && audioRef.current.ended) {
+            // Handled in onEnded
+          }
+        }}
         onEnded={() => {
           if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
             setActiveBlockId((prev) => prev + 1);
@@ -240,7 +277,7 @@ export default function App() {
             onUpdateSettings={handleUpdateSettings}
           />
 
-          {/* Sticky Bottom Audio Player */}
+          {/* Sticky Bottom Audio Player: Always mounted & visible during reading session */}
           <AudioPlayer
             docId={selectedDocId}
             currentBlock={activeBlockId}
@@ -264,7 +301,11 @@ export default function App() {
         </>
       ) : (
         <LibraryView
-          onSelectDocument={(id) => setSelectedDocId(id)}
+          onSelectDocument={(id) => {
+            setSelectedDocId(id);
+            setActiveBlockId(0);
+            setIsPlaying(false);
+          }}
           onEditDocument={(id) => setEditingDocId(id)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />

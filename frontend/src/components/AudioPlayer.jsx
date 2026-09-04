@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -10,32 +10,21 @@ import {
   Search, 
   Sliders, 
   ChevronDown,
-  X
+  X,
+  Check,
+  Globe2
 } from 'lucide-react';
-
-const DEFAULT_POPULAR_VOICES = [
-  { id: 'af_heart', label: 'Heart (Kokoro Warm)', engine: 'kokoro' },
-  { id: 'af_alloy', label: 'Alloy (Kokoro Neutral)', engine: 'kokoro' },
-  { id: 'af_bella', label: 'Bella (Kokoro Soft)', engine: 'kokoro' },
-  { id: 'af_nova', label: 'Nova (Kokoro Bright)', engine: 'kokoro' },
-  { id: 'am_echo', label: 'Echo (Kokoro Male)', engine: 'kokoro' },
-  { id: 'am_onyx', label: 'Onyx (Kokoro Deep)', engine: 'kokoro' },
-  { id: 'bf_emma', label: 'Emma (British Female)', engine: 'kokoro' },
-  { id: 'bm_george', label: 'George (British Male)', engine: 'kokoro' },
-  { id: 'alloy', label: 'Standard Alloy', engine: 'openai' },
-  { id: 'echo', label: 'Standard Echo', engine: 'openai' },
-];
 
 export default function AudioPlayer({
   docId,
-  currentBlock,
+  currentBlock = 0,
   totalBlocks = 0,
   isPlaying,
   isLoadingAudio,
   audioSrc,
   playbackSpeed = 1.0,
-  selectedVoice = 'af_alloy',
-  selectedModel = 'kokoro',
+  selectedVoice = 'en-US-ChristopherNeural',
+  selectedModel = 'edge-tts',
   onTogglePlay,
   onSeek,
   onSpeedChange,
@@ -47,40 +36,18 @@ export default function AudioPlayer({
   duration = 0,
 }) {
   const [showModelModal, setShowModelModal] = useState(false);
-  const [models, setModels] = useState([]);
-  const [loadingModels, setLoadingModels] = useState(false);
-
-  const [voices, setVoices] = useState(DEFAULT_POPULAR_VOICES);
+  const [voices, setVoices] = useState([]);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState('');
+  
+  // Multi-select engine filter toggles (push-on, push-off buttons)
+  const [selectedEngines, setSelectedEngines] = useState(['edge-tts', 'kokoro', 'piper']);
+  // Language filter
+  const [selectedLanguage, setSelectedLanguage] = useState('all');
 
   const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
   useEffect(() => {
     let ignore = false;
-    const fetchModels = async () => {
-      try {
-        setLoadingModels(true);
-        const res = await fetch('/api/models');
-        if (!res.ok) throw new Error('Failed to fetch models');
-        const data = await res.json();
-        if (!ignore) {
-          setModels(data.data || []);
-        }
-      } catch {
-        if (!ignore) {
-          setModels([
-            { id: 'kokoro', name: 'Kokoro (Neural TTS)' },
-            { id: 'tts-1', name: 'TTS 1 (Standard)' },
-            { id: 'tts-1-hd', name: 'TTS 1 HD (High Quality)' },
-            { id: 'edge-tts', name: 'Edge-TTS' },
-            { id: 'piper', name: 'Piper' },
-          ]);
-        }
-      } finally {
-        if (!ignore) setLoadingModels(false);
-      }
-    };
-
     const fetchVoices = async () => {
       try {
         const res = await fetch('/api/voices');
@@ -90,32 +57,85 @@ export default function AudioPlayer({
           const formatted = data.voices.map((v) => ({
             id: v.id,
             label: v.name || v.id,
-            engine: v.engine || 'tts',
+            engine: v.engine || 'edge-tts',
             language: v.language || '',
+            gender: v.gender || '',
           }));
           setVoices(formatted);
         }
       } catch {
-        // Keep default popular voices
+        // Fallback popular voices
       }
     };
 
-    fetchModels();
     fetchVoices();
     return () => {
       ignore = true;
     };
   }, []);
 
-  const filteredModels = models;
+  // Available unique engines in the voice list
+  const availableEngines = useMemo(() => {
+    const set = new Set(voices.map((v) => v.engine).filter(Boolean));
+    return Array.from(set).length > 0 ? Array.from(set) : ['edge-tts', 'kokoro', 'piper'];
+  }, [voices]);
 
-  const filteredVoices = voices.filter((v) => {
-    const q = voiceSearchQuery.toLowerCase();
-    const id = (v.id || '').toLowerCase();
-    const label = (v.label || '').toLowerCase();
-    const engine = (v.engine || '').toLowerCase();
-    return id.includes(q) || label.includes(q) || engine.includes(q);
-  });
+  // Available languages
+  const availableLanguages = useMemo(() => {
+    const map = new Map();
+    voices.forEach((v) => {
+      if (v.language) {
+        const lang = v.language;
+        map.set(lang, (map.get(lang) || 0) + 1);
+      }
+    });
+    const sorted = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+    return sorted;
+  }, [voices]);
+
+  // Toggle single engine on/off
+  const toggleEngine = (engine) => {
+    setSelectedEngines((prev) => {
+      if (prev.includes(engine)) {
+        // Do not allow deselecting all if only 1 is left, unless intentional
+        if (prev.length === 1) return prev;
+        return prev.filter((e) => e !== engine);
+      } else {
+        return [...prev, engine];
+      }
+    });
+  };
+
+  const selectAllEngines = () => setSelectedEngines(availableEngines);
+
+  // Filter voices based on multi-select engines, language, and search query
+  const filteredVoices = useMemo(() => {
+    return voices.filter((v) => {
+      // 1. Engine filter
+      if (selectedEngines.length > 0 && !selectedEngines.includes(v.engine)) {
+        return false;
+      }
+      // 2. Language filter
+      if (selectedLanguage !== 'all' && v.language.toLowerCase() !== selectedLanguage.toLowerCase()) {
+        return false;
+      }
+      // 3. Search query
+      if (voiceSearchQuery.trim()) {
+        const q = voiceSearchQuery.toLowerCase();
+        const id = (v.id || '').toLowerCase();
+        const label = (v.label || '').toLowerCase();
+        const lang = (v.language || '').toLowerCase();
+        const eng = (v.engine || '').toLowerCase();
+        return id.includes(q) || label.includes(q) || lang.includes(q) || eng.includes(q);
+      }
+      return true;
+    });
+  }, [voices, selectedEngines, selectedLanguage, voiceSearchQuery]);
+
+  // Find currently selected voice object for detailed label display
+  const currentVoiceObj = useMemo(() => {
+    return voices.find((v) => v.id === selectedVoice);
+  }, [voices, selectedVoice]);
 
   const formatTime = (secs) => {
     if (isNaN(secs) || secs < 0) return '0:00';
@@ -137,11 +157,16 @@ export default function AudioPlayer({
     onSeek(nextTime);
   };
 
-  if (!docId || currentBlock === null || currentBlock === undefined) {
-    return null;
-  }
+  const handleSelectVoice = (voiceItem) => {
+    if (onVoiceChange) onVoiceChange(voiceItem.id);
+    if (voiceItem.engine && onModelChange) {
+      onModelChange(voiceItem.engine);
+    }
+  };
 
+  const displayBlockIndex = currentBlock !== null && currentBlock !== undefined ? currentBlock : 0;
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const isReadyToPlay = Boolean(docId && totalBlocks > 0);
 
   return (
     <>
@@ -163,7 +188,7 @@ export default function AudioPlayer({
             {/* Left: Block info & Times */}
             <div className="flex items-center gap-3 min-w-0">
               <div className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-md text-xs font-mono font-medium">
-                Block {currentBlock + 1} / {totalBlocks}
+                Block {totalBlocks > 0 ? displayBlockIndex + 1 : 0} / {totalBlocks}
               </div>
               <span className="text-xs font-mono text-zinc-400 select-none">
                 {formatTime(currentTime)} / {formatTime(duration)}
@@ -173,18 +198,20 @@ export default function AudioPlayer({
             {/* Center: Playback Controls */}
             <div className="flex items-center gap-1 sm:gap-2">
               <button
+                type="button"
                 onClick={onPrevBlock}
-                disabled={currentBlock <= 0}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition"
+                disabled={!isReadyToPlay || displayBlockIndex <= 0}
+                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition cursor-pointer"
                 title="Previous Block"
               >
                 <SkipBack className="w-4 h-4" />
               </button>
 
               <button
+                type="button"
                 onClick={() => handleJump(-10)}
                 disabled={!audioSrc}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition flex items-center justify-center relative"
+                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer"
                 title="Jump back 10s"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -192,9 +219,10 @@ export default function AudioPlayer({
               </button>
 
               <button
+                type="button"
                 onClick={onTogglePlay}
-                disabled={isLoadingAudio && !audioSrc}
-                className="w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-lg shadow-indigo-600/30 active:scale-95 disabled:opacity-50"
+                disabled={!isReadyToPlay || (isLoadingAudio && !audioSrc)}
+                className="w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-lg shadow-indigo-600/30 active:scale-95 disabled:opacity-50 cursor-pointer"
                 title={isPlaying ? 'Pause' : 'Play'}
               >
                 {isLoadingAudio ? (
@@ -207,9 +235,10 @@ export default function AudioPlayer({
               </button>
 
               <button
+                type="button"
                 onClick={() => handleJump(10)}
                 disabled={!audioSrc}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition flex items-center justify-center relative"
+                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer"
                 title="Jump forward 10s"
               >
                 <RotateCw className="w-4 h-4" />
@@ -217,9 +246,10 @@ export default function AudioPlayer({
               </button>
 
               <button
+                type="button"
                 onClick={onNextBlock}
-                disabled={currentBlock >= totalBlocks - 1}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition"
+                disabled={!isReadyToPlay || displayBlockIndex >= totalBlocks - 1}
+                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition cursor-pointer"
                 title="Next Block"
               >
                 <SkipForward className="w-4 h-4" />
@@ -246,14 +276,19 @@ export default function AudioPlayer({
 
               {/* Model & Voice Dropdown Trigger */}
               <button
+                type="button"
                 onClick={() => setShowModelModal(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition"
-                title="Voice and Model Settings"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition cursor-pointer max-w-[220px]"
+                title="Voice & Engine Configuration"
               >
-                <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="hidden sm:inline capitalize">{selectedVoice.replace('af_', '').replace('am_', '')}</span>
-                <span className="opacity-50 text-[10px]">({selectedModel})</span>
-                <ChevronDown className="w-3 h-3 opacity-60" />
+                <Sliders className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                <span className="truncate">
+                  {currentVoiceObj ? (currentVoiceObj.label.split(' - ')[0] || currentVoiceObj.id) : selectedVoice}
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-indigo-300 flex-shrink-0">
+                  {selectedModel}
+                </span>
+                <ChevronDown className="w-3 h-3 opacity-60 flex-shrink-0" />
               </button>
             </div>
           </div>
@@ -262,108 +297,167 @@ export default function AudioPlayer({
 
       {/* Model & Voice Selection Modal */}
       {showModelModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 text-zinc-100 max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 text-zinc-100 max-h-[90vh] flex flex-col">
             <button
+              type="button"
               onClick={() => setShowModelModal(false)}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200"
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-base font-bold mb-4 flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-indigo-400" />
-              TTS Engine & Voice Configuration
-            </h3>
+            <div className="flex items-center gap-2 mb-1">
+              <Sliders className="w-5 h-5 text-indigo-400" />
+              <h3 className="text-base font-bold">TTS Engine & Voice Selection</h3>
+            </div>
+            <p className="text-xs text-zinc-400 mb-4">
+              Toggle engine buttons to filter voices across Edge TTS (zero-CPU), Kokoro (neural), and Piper.
+            </p>
 
-            <div className="overflow-y-auto space-y-5 pr-1 flex-1">
-              {/* Model selection */}
-              <div>
+            <div className="overflow-y-auto space-y-4 pr-1 flex-1">
+              {/* Push-on Push-off Engine Filter Buttons */}
+              <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Model / Engine
-                  </label>
-                  {loadingModels && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
+                  <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    Filter by Engine
+                  </span>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={selectAllEngines}
+                      className="text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {filteredModels.map((m) => {
-                    const mId = m.id || m;
-                    const mName = m.name || mId;
-                    const isSelected = selectedModel === mId;
+                <div className="flex flex-wrap items-center gap-2">
+                  {availableEngines.map((engine) => {
+                    const isToggled = selectedEngines.includes(engine);
+                    const engineCount = voices.filter((v) => v.engine === engine).length;
                     return (
                       <button
-                        key={mId}
-                        onClick={() => onModelChange && onModelChange(mId)}
-                        className={`px-3 py-2 rounded-lg text-xs font-medium border text-left transition ${
-                          isSelected
-                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-xs'
-                            : 'bg-zinc-800/60 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800'
+                        key={engine}
+                        type="button"
+                        onClick={() => toggleEngine(engine)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-2 transition cursor-pointer ${
+                          isToggled
+                            ? 'bg-indigo-600/25 border-indigo-500 text-indigo-300 ring-1 ring-indigo-500/40'
+                            : 'bg-zinc-800/50 border-zinc-700/60 text-zinc-400 hover:bg-zinc-800'
                         }`}
                       >
-                        <div className="truncate font-semibold">{mId}</div>
-                        <div className="text-[10px] opacity-60 truncate">{mName}</div>
+                        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[10px] ${
+                          isToggled ? 'bg-indigo-500 border-indigo-400 text-white' : 'border-zinc-600'
+                        }`}>
+                          {isToggled && <Check className="w-2.5 h-2.5" />}
+                        </div>
+                        <span className="capitalize font-semibold">{engine}</span>
+                        <span className="text-[10px] opacity-60">({engineCount})</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Searchable Voice Selection */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Voice ({filteredVoices.length} available)
+              {/* Language Selector & Voice Search */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1 flex items-center gap-1">
+                    <Globe2 className="w-3.5 h-3.5 text-zinc-500" />
+                    Language / Region
                   </label>
+                  <select
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">All Languages ({voices.length})</option>
+                    {availableLanguages.map(([lang, count]) => (
+                      <option key={lang} value={lang}>
+                        {lang} ({count})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="relative mb-2">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
-                  <input
-                    type="text"
-                    placeholder="Search voices by name, language, or engine..."
-                    value={voiceSearchQuery}
-                    onChange={(e) => setVoiceSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
-                  />
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                    Search Voices ({filteredVoices.length} found)
+                  </label>
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
+                    <input
+                      type="text"
+                      placeholder="Search voice by name or ID..."
+                      value={voiceSearchQuery}
+                      onChange={(e) => setVoiceSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
+              </div>
 
-                <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 border border-zinc-800 rounded-lg p-1.5 bg-zinc-950/40">
+              {/* Voice Cards / List */}
+              <div>
+                <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 border border-zinc-800 rounded-xl p-2 bg-zinc-950/40">
                   {filteredVoices.map((v) => {
                     const isSelected = selectedVoice === v.id;
                     return (
                       <button
                         key={v.id}
-                        onClick={() => onVoiceChange && onVoiceChange(v.id)}
-                        className={`w-full px-3 py-2 rounded-md text-left text-xs transition flex items-center justify-between ${
+                        type="button"
+                        onClick={() => handleSelectVoice(v)}
+                        className={`w-full px-3 py-2 rounded-lg text-left text-xs transition flex items-center justify-between cursor-pointer border ${
                           isSelected
-                            ? 'bg-indigo-600 text-white font-medium'
-                            : 'text-zinc-300 hover:bg-zinc-800'
+                            ? 'bg-indigo-600/30 border-indigo-500 text-white ring-1 ring-indigo-500/40'
+                            : 'border-transparent text-zinc-300 hover:bg-zinc-800/80'
                         }`}
                       >
-                        <div className="truncate">
-                          <span className="font-semibold">{v.label}</span>
-                          {v.engine && (
-                            <span className="ml-2 text-[10px] opacity-60 uppercase font-mono px-1 py-0.5 rounded bg-black/20">
+                        <div className="min-w-0 pr-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold truncate">{v.label}</span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 bg-zinc-800 text-zinc-400 rounded">
                               {v.engine}
                             </span>
-                          )}
+                            {v.language && (
+                              <span className="text-[10px] opacity-60 font-mono">
+                                {v.language}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] font-mono opacity-50 truncate mt-0.5">
+                            {v.id}
+                          </div>
                         </div>
-                        {isSelected && <span className="text-[10px] opacity-90 ml-2">Selected</span>}
+
+                        {isSelected && (
+                          <div className="flex items-center gap-1 text-[11px] text-indigo-400 font-semibold flex-shrink-0">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Active</span>
+                          </div>
+                        )}
                       </button>
                     );
                   })}
                   {filteredVoices.length === 0 && (
-                    <p className="text-xs text-zinc-500 text-center py-4">No matching voices found.</p>
+                    <div className="py-8 text-center text-xs text-zinc-500">
+                      No voices match your filters. Try selecting more engines or clearing search.
+                    </div>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-zinc-800 flex justify-end">
+            <div className="mt-4 pt-3 border-t border-zinc-800 flex items-center justify-between">
+              <div className="text-xs text-zinc-400">
+                Selected: <span className="font-semibold text-zinc-200">{selectedVoice}</span> <span className="opacity-60 font-mono">({selectedModel})</span>
+              </div>
               <button
+                type="button"
                 onClick={() => setShowModelModal(false)}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition shadow-xs"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer"
               >
                 Done
               </button>
