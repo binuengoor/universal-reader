@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import LibraryView from './components/LibraryView';
 import ReaderView from './components/ReaderView';
 import AudioPlayer from './components/AudioPlayer';
+import { prefetchBlockAudio } from './utils/audioPrefetch';
 
 export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
@@ -78,6 +79,21 @@ export default function App() {
       });
     }
   }, [selectedDocId, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying]);
+
+  // Lookahead sliding window prefetch for blocks N+1 and N+2
+  useEffect(() => {
+    if (!selectedDocId || activeBlockId === null || !isPlaying) return;
+
+    const next1 = activeBlockId + 1;
+    const next2 = activeBlockId + 2;
+
+    if (next1 < totalBlocks) {
+      prefetchBlockAudio(selectedDocId, next1, selectedVoice, selectedModel, playbackSpeed);
+    }
+    if (next2 < totalBlocks) {
+      prefetchBlockAudio(selectedDocId, next2, selectedVoice, selectedModel, playbackSpeed);
+    }
+  }, [selectedDocId, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel, playbackSpeed]);
 
   const handleTogglePlay = () => {
     const audioEl = audioRef.current;
