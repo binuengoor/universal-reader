@@ -6,8 +6,10 @@ import {
   Search, 
   X, 
   ChevronUp, 
-  ChevronDown 
+  ChevronDown,
+  Type
 } from 'lucide-react';
+import DisplaySettingsDrawer from './DisplaySettingsDrawer';
 
 export default function ReaderView({
   docId,
@@ -15,7 +17,9 @@ export default function ReaderView({
   activeBlockId,
   onSelectBlock,
   settings = { theme: 'dark', fontSize: 18, lineHeight: 1.7, fontFamily: 'serif' },
+  onUpdateSettings,
 }) {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [docData, setDocData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -269,6 +273,15 @@ export default function ReaderView({
               <span className="hidden sm:inline">Search</span>
             </button>
           )}
+
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10"
+            title="Display Options (Aa)"
+          >
+            <Type className="w-4 h-4 text-indigo-400" />
+            <span className="font-serif font-bold text-sm leading-none">Aa</span>
+          </button>
         </div>
       </header>
 
@@ -333,7 +346,7 @@ export default function ReaderView({
       )}
 
       {/* Reader Content Column */}
-      <main className="max-w-3xl mx-auto px-6 pt-10">
+      <main className={`${settings.contentWidth || 'max-w-3xl'} mx-auto px-6 pt-10`}>
         <div className="space-y-4">
           {chunks?.map((chunk) => {
             const isActive = activeBlockId === chunk.id;
@@ -382,6 +395,14 @@ export default function ReaderView({
           })}
         </div>
       </main>
+
+      {/* Kindle Display Options Drawer */}
+      <DisplaySettingsDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        settings={settings}
+        onUpdateSettings={onUpdateSettings || (() => {})}
+      />
     </div>
   );
 }
