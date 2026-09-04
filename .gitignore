@@ -45,10 +45,5 @@ build/
 *.swn
 *.bak
 
-# Docker
-Dockerfile*
-docker-compose*.yml
-*.dockerignore
-
 # Virtualenv
 venv/

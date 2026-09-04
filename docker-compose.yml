@@ -1,0 +1,23 @@
+services:
+  universal-reader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: universal-reader
+    ports:
+      - "9025:9025"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATA_DIR=/data/documents
+      - TTS_BASE_URL=${TTS_BASE_URL:-http://host.docker.internal:8000}
+      - TTS_API_KEY=${TTS_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9025/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
