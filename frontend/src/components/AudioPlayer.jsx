@@ -106,7 +106,15 @@ export default function AudioPlayer({
     });
   };
 
-  const selectAllEngines = () => setSelectedEngines(availableEngines);
+  const allEnginesSelected = availableEngines.length > 0 && selectedEngines.length === availableEngines.length;
+
+  const toggleAllEngines = () => {
+    if (allEnginesSelected) {
+      setSelectedEngines([]);
+    } else {
+      setSelectedEngines(availableEngines);
+    }
+  };
 
   // Filter voices based on multi-select engines, language, and search query
   const filteredVoices = useMemo(() => {
@@ -325,10 +333,10 @@ export default function AudioPlayer({
                   <div className="flex items-center gap-2 text-[11px]">
                     <button
                       type="button"
-                      onClick={selectAllEngines}
-                      className="text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+                      onClick={toggleAllEngines}
+                      className="text-indigo-400 hover:text-indigo-300 font-medium transition cursor-pointer"
                     >
-                      Select All
+                      {allEnginesSelected ? 'Unselect All' : 'Select All'}
                     </button>
                   </div>
                 </div>
