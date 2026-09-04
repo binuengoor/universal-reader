@@ -187,9 +187,14 @@ export default function App() {
             docId={selectedDocId}
             onBack={handleBackToLibrary}
             activeBlockId={activeBlockId}
+            isPlaying={isPlaying}
             onSelectBlock={(id) => {
-              setActiveBlockId(id);
-              setIsPlaying(true);
+              if (activeBlockId === id) {
+                handleTogglePlay();
+              } else {
+                setActiveBlockId(id);
+                setIsPlaying(true);
+              }
             }}
             settings={readerSettings}
             onUpdateSettings={handleUpdateSettings}

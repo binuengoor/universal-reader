@@ -31,7 +31,7 @@
 
 ## Phase 5: Audio Player & Lookahead Sliding Buffer
 - [x] Build sticky bottom player with Play/Pause, jump $\pm 10$s, speed selector, and searchable model dropdown.
-- [ ] Implement click-to-play on individual text blocks.
+- [x] Implement click-to-play on individual text blocks.
 - [ ] Implement lookahead prefetch: trigger background fetch for blocks $N+1$ and $N+2$ while block $N$ plays.
 - [ ] Implement continuous playback: auto-advance to next block upon audio termination.
 - [ ] Run end-to-end smoke tests on ingestion, playback, and cache persistence.

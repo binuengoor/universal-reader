@@ -7,7 +7,9 @@ import {
   X, 
   ChevronUp, 
   ChevronDown,
-  Type
+  Type,
+  Play,
+  Pause
 } from 'lucide-react';
 import DisplaySettingsDrawer from './DisplaySettingsDrawer';
 
@@ -15,6 +17,7 @@ export default function ReaderView({
   docId,
   onBack,
   activeBlockId,
+  isPlaying = false,
   onSelectBlock,
   settings = { theme: 'dark', fontSize: 18, lineHeight: 1.7, fontFamily: 'serif' },
   onUpdateSettings,
@@ -378,13 +381,32 @@ export default function ReaderView({
                     : getBlockHoverClasses()
                 }`}
               >
-                {/* Block index indicator */}
-                <div
-                  className={`absolute -left-10 top-4 text-[10px] font-mono tracking-tighter w-8 text-right opacity-0 group-hover:opacity-40 transition-opacity select-none ${
-                    isActive ? '!opacity-80 font-bold text-indigo-400' : ''
-                  }`}
-                >
-                  #{chunk.id + 1}
+                {/* Block index & click-to-play gutter */}
+                <div className="absolute -left-12 top-3 flex items-center justify-end w-10 select-none">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onSelectBlock) onSelectBlock(chunk.id);
+                    }}
+                    className={`w-6 h-6 rounded-full transition-all flex items-center justify-center cursor-pointer ${
+                      isActive
+                        ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/30'
+                        : 'text-zinc-500 opacity-0 group-hover:opacity-100 hover:bg-zinc-800 hover:text-zinc-200'
+                    }`}
+                    title={isActive && isPlaying ? 'Pause' : `Play block ${chunk.id + 1}`}
+                  >
+                    {isActive && isPlaying ? (
+                      <Pause className="w-3 h-3 fill-current" />
+                    ) : (
+                      <Play className="w-3 h-3 fill-current ml-0.5" />
+                    )}
+                  </button>
+                  {!isActive && (
+                    <span className="text-[10px] font-mono tracking-tighter opacity-40 group-hover:hidden text-right w-full pr-1">
+                      #{chunk.id + 1}
+                    </span>
+                  )}
                 </div>
 
                 <p className="select-text whitespace-pre-wrap leading-relaxed">
