@@ -21,13 +21,9 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   
-  // Default voice & model - synchronized with backend settings
-  const [selectedVoice, setSelectedVoice] = useState(() => {
-    return localStorage.getItem('universal_reader_voice') || 'en-US-ChristopherNeural';
-  });
-  const [selectedModel, setSelectedModel] = useState(() => {
-    return localStorage.getItem('universal_reader_model') || 'edge-tts';
-  });
+  // Default voice & model - initialized to edge-tts default
+  const [selectedVoice, setSelectedVoice] = useState('en-US-ChristopherNeural');
+  const [selectedModel, setSelectedModel] = useState('edge-tts');
 
   const audioRef = useRef(null);
 
@@ -47,33 +43,6 @@ export default function App() {
     };
   });
 
-  // Sync initial defaults from /api/settings on mount if not customized in localStorage
-  useEffect(() => {
-    let ignore = false;
-    const fetchDefaultSettings = async () => {
-      try {
-        const res = await fetch('/api/settings');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (ignore) return;
-        const storedModel = localStorage.getItem('universal_reader_model');
-        const storedVoice = localStorage.getItem('universal_reader_voice');
-        if (!storedModel && (data.tts_default_model || data.default_model)) {
-          setSelectedModel(data.tts_default_model || data.default_model);
-        }
-        if (!storedVoice && (data.tts_default_voice || data.default_voice)) {
-          setSelectedVoice(data.tts_default_voice || data.default_voice);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    fetchDefaultSettings();
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
   // Fetch document summary (e.g. block count) when selectedDocId changes
   useEffect(() => {
     let ignore = false;
@@ -92,9 +61,10 @@ export default function App() {
     };
   }, [selectedDocId]);
 
-  // When activeBlockId, voice, model, or speed changes, update audio source
+  // When activeBlockId, voice, model, or speed changes, update audio source ONLY if playing or already loaded
   useEffect(() => {
     if (!selectedDocId || activeBlockId === null) return;
+    if (!isPlaying && !currentAudioSrc) return; // Do not fetch or generate audio until user initiates playback
 
     const audioEl = audioRef.current;
     if (!audioEl) return;
@@ -109,14 +79,12 @@ export default function App() {
     if (isPlaying) {
       const playPromise = audioEl.play();
       if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // Play request may fail if user has not interacted or network error
-        });
+        playPromise.catch(() => {});
       }
     }
-  }, [selectedDocId, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying]);
+  }, [selectedDocId, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying, currentAudioSrc]);
 
-  // Lookahead sliding window prefetch for blocks N+1 and N+2
+  // Lookahead sliding window prefetch for blocks N+1 and N+2 (queued sequentially)
   useEffect(() => {
     if (!selectedDocId || activeBlockId === null || !isPlaying) return;
 
@@ -135,16 +103,19 @@ export default function App() {
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
-    if (activeBlockId === null && totalBlocks > 0) {
-      setActiveBlockId(0);
-      setIsPlaying(true);
-      return;
-    }
-
     if (isPlaying) {
       audioEl.pause();
       setIsPlaying(false);
     } else {
+      // If audio element doesn't have src yet, assign it now
+      if (!currentAudioSrc && selectedDocId) {
+        const src = `/api/documents/${selectedDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
+        setCurrentAudioSrc(src);
+        setIsLoadingAudio(true);
+        audioEl.src = src;
+        audioEl.playbackRate = playbackSpeed;
+        audioEl.load();
+      }
       setIsPlaying(true);
       audioEl.play().catch(() => {});
     }
@@ -166,20 +137,10 @@ export default function App() {
 
   const handleVoiceChange = (voice) => {
     setSelectedVoice(voice);
-    try {
-      localStorage.setItem('universal_reader_voice', voice);
-    } catch {
-      // ignore
-    }
   };
 
   const handleModelChange = (model) => {
     setSelectedModel(model);
-    try {
-      localStorage.setItem('universal_reader_model', model);
-    } catch {
-      // ignore
-    }
   };
 
   const handleNextBlock = () => {
@@ -200,6 +161,31 @@ export default function App() {
       localStorage.setItem('universal_reader_settings', JSON.stringify(newSettings));
     } catch {
       // ignore
+    }
+  };
+
+  const handleOpenDocument = async (id) => {
+    // Reset to default model & voice configured in settings every time a note is opened
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        const defModel = data.tts_default_model || data.default_model || 'edge-tts';
+        const defVoice = data.tts_default_voice || data.default_voice || 'en-US-ChristopherNeural';
+        setSelectedModel(defModel);
+        setSelectedVoice(defVoice);
+      }
+    } catch {
+      // keep current defaults
+    }
+
+    setSelectedDocId(id);
+    setActiveBlockId(0);
+    setIsPlaying(false);
+    setCurrentAudioSrc('');
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
     }
   };
 
@@ -231,10 +217,7 @@ export default function App() {
           setIsPlaying(true);
         }}
         onPause={() => {
-          // Only sync pause if audio actually ended or stopped
-          if (audioRef.current && audioRef.current.ended) {
-            // Handled in onEnded
-          }
+          // Handled in onEnded or user toggle
         }}
         onEnded={() => {
           if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
@@ -252,9 +235,7 @@ export default function App() {
           onBack={() => setEditingDocId(null)}
           onSaved={(docId) => {
             setEditingDocId(null);
-            setSelectedDocId(docId);
-            setActiveBlockId(0);
-            setIsPlaying(false);
+            handleOpenDocument(docId);
           }}
         />
       ) : selectedDocId ? (
@@ -270,6 +251,15 @@ export default function App() {
                 handleTogglePlay();
               } else {
                 setActiveBlockId(id);
+                // Assign src if first time
+                if (!currentAudioSrc && audioRef.current) {
+                  const src = `/api/documents/${selectedDocId}/blocks/${id}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
+                  setCurrentAudioSrc(src);
+                  setIsLoadingAudio(true);
+                  audioRef.current.src = src;
+                  audioRef.current.playbackRate = playbackSpeed;
+                  audioRef.current.load();
+                }
                 setIsPlaying(true);
               }
             }}
@@ -277,7 +267,7 @@ export default function App() {
             onUpdateSettings={handleUpdateSettings}
           />
 
-          {/* Sticky Bottom Audio Player: Always mounted & visible during reading session */}
+          {/* Sticky Bottom Audio Player: Always mounted & ready on document open */}
           <AudioPlayer
             docId={selectedDocId}
             currentBlock={activeBlockId}
@@ -301,11 +291,7 @@ export default function App() {
         </>
       ) : (
         <LibraryView
-          onSelectDocument={(id) => {
-            setSelectedDocId(id);
-            setActiveBlockId(0);
-            setIsPlaying(false);
-          }}
+          onSelectDocument={handleOpenDocument}
           onEditDocument={(id) => setEditingDocId(id)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />

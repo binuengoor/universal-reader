@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: universal-reader
     ports:
-      - "9025:9025"
+      - "3003:9025"
     volumes:
       - ./data:/data
     environment:
