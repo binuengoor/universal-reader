@@ -2,7 +2,7 @@ import os
 import re
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 
 # Base storage directory: defaults to data/documents in the project root
@@ -111,7 +111,7 @@ def save_document(doc_id: str, title: str, source_type: str, text: str, chunks: 
         "id": doc_id,
         "title": title,
         "source_type": source_type,
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "block_count": len(chunks),
         "total_chars": len(text)
     }

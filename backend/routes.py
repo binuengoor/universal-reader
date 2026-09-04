@@ -4,12 +4,13 @@ import shutil
 import trafilatura
 from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 
 from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
-from .tts import tts_client
+from .tts import tts_client, get_audio_filename
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
@@ -64,6 +65,12 @@ class UrlDocRequest(BaseModel):
     url: str
     title: Optional[str] = None
 
+class BlockAudioRequest(BaseModel):
+    voice: str = "alloy"
+    model: str = "tts-1"
+    speed: float = 1.0
+    response_format: str = "mp3"
+
 @router.get("")
 async def list_documents():
     """List all ingested documents from storage."""
@@ -114,6 +121,102 @@ async def get_document(doc_id: str):
         "meta": meta,
         "chunks": chunks
     }
+
+async def _synthesize_or_get_cached_audio(
+    doc_id: str,
+    block_id: int,
+    voice: str,
+    model: str,
+    speed: float,
+    response_format: str = "mp3"
+):
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    if not os.path.isdir(doc_dir):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    chunks_path = os.path.join(doc_dir, "chunks.json")
+    if not os.path.exists(chunks_path):
+        raise HTTPException(status_code=404, detail="Document chunks not found")
+
+    try:
+        with open(chunks_path, "r", encoding="utf-8") as f:
+            chunks = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read chunks: {str(e)}")
+
+    target_block = None
+    for chunk in chunks:
+        if chunk.get("id") == block_id:
+            target_block = chunk
+            break
+
+    if target_block is None:
+        raise HTTPException(status_code=404, detail=f"Block {block_id} not found")
+
+    block_text = target_block.get("text", "").strip()
+    if not block_text:
+        raise HTTPException(status_code=400, detail="Block contains no readable text")
+
+    cache_dir = os.path.join(doc_dir, "audio_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    filename = get_audio_filename(block_id, voice, model, speed, block_text)
+    file_path = os.path.join(cache_dir, filename)
+
+    is_cache_hit = os.path.exists(file_path) and os.path.getsize(file_path) > 0
+
+    if not is_cache_hit:
+        audio_bytes = await tts_client.synthesize(
+            text=block_text,
+            voice=voice,
+            model=model,
+            speed=speed,
+            response_format=response_format
+        )
+        with open(file_path, "wb") as f:
+            f.write(audio_bytes)
+
+    return FileResponse(
+        path=file_path,
+        media_type="audio/mpeg",
+        filename=filename,
+        headers={"X-Cache": "HIT" if is_cache_hit else "MISS"}
+    )
+
+@router.post("/{doc_id}/blocks/{block_id}/audio")
+async def generate_block_audio(
+    doc_id: str,
+    block_id: int,
+    req: BlockAudioRequest = BlockAudioRequest()
+):
+    """Synthesize or retrieve cached audio for a specific text block."""
+    return await _synthesize_or_get_cached_audio(
+        doc_id=doc_id,
+        block_id=block_id,
+        voice=req.voice,
+        model=req.model,
+        speed=req.speed,
+        response_format=req.response_format
+    )
+
+@router.get("/{doc_id}/blocks/{block_id}/audio")
+async def get_block_audio(
+    doc_id: str,
+    block_id: int,
+    voice: str = "alloy",
+    model: str = "tts-1",
+    speed: float = 1.0,
+    response_format: str = "mp3"
+):
+    """Retrieve or generate block audio via GET for browser audio elements."""
+    return await _synthesize_or_get_cached_audio(
+        doc_id=doc_id,
+        block_id=block_id,
+        voice=voice,
+        model=model,
+        speed=speed,
+        response_format=response_format
+    )
 
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str):
