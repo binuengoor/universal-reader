@@ -13,6 +13,19 @@ import {
   X
 } from 'lucide-react';
 
+const DEFAULT_POPULAR_VOICES = [
+  { id: 'af_heart', label: 'Heart (Kokoro Warm)', engine: 'kokoro' },
+  { id: 'af_alloy', label: 'Alloy (Kokoro Neutral)', engine: 'kokoro' },
+  { id: 'af_bella', label: 'Bella (Kokoro Soft)', engine: 'kokoro' },
+  { id: 'af_nova', label: 'Nova (Kokoro Bright)', engine: 'kokoro' },
+  { id: 'am_echo', label: 'Echo (Kokoro Male)', engine: 'kokoro' },
+  { id: 'am_onyx', label: 'Onyx (Kokoro Deep)', engine: 'kokoro' },
+  { id: 'bf_emma', label: 'Emma (British Female)', engine: 'kokoro' },
+  { id: 'bm_george', label: 'George (British Male)', engine: 'kokoro' },
+  { id: 'alloy', label: 'Standard Alloy', engine: 'openai' },
+  { id: 'echo', label: 'Standard Echo', engine: 'openai' },
+];
+
 export default function AudioPlayer({
   docId,
   currentBlock,
@@ -21,8 +34,8 @@ export default function AudioPlayer({
   isLoadingAudio,
   audioSrc,
   playbackSpeed = 1.0,
-  selectedVoice = 'alloy',
-  selectedModel = 'tts-1',
+  selectedVoice = 'af_alloy',
+  selectedModel = 'kokoro',
   onTogglePlay,
   onSeek,
   onSpeedChange,
@@ -36,17 +49,11 @@ export default function AudioPlayer({
   const [showModelModal, setShowModelModal] = useState(false);
   const [models, setModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState('');
+
+  const [voices, setVoices] = useState(DEFAULT_POPULAR_VOICES);
+  const [voiceSearchQuery, setVoiceSearchQuery] = useState('');
 
   const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-  const voiceOptions = [
-    { id: 'alloy', label: 'Alloy (Neutral)' },
-    { id: 'echo', label: 'Echo (Warm)' },
-    { id: 'fable', label: 'Fable (British)' },
-    { id: 'onyx', label: 'Onyx (Deep)' },
-    { id: 'nova', label: 'Nova (Energetic)' },
-    { id: 'shimmer', label: 'Shimmer (Clear)' },
-  ];
 
   useEffect(() => {
     let ignore = false;
@@ -62,25 +69,52 @@ export default function AudioPlayer({
       } catch {
         if (!ignore) {
           setModels([
+            { id: 'kokoro', name: 'Kokoro (Neural TTS)' },
             { id: 'tts-1', name: 'TTS 1 (Standard)' },
             { id: 'tts-1-hd', name: 'TTS 1 HD (High Quality)' },
+            { id: 'edge-tts', name: 'Edge-TTS' },
+            { id: 'piper', name: 'Piper' },
           ]);
         }
       } finally {
         if (!ignore) setLoadingModels(false);
       }
     };
+
+    const fetchVoices = async () => {
+      try {
+        const res = await fetch('/api/voices');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!ignore && data.voices && data.voices.length > 0) {
+          const formatted = data.voices.map((v) => ({
+            id: v.id,
+            label: v.name || v.id,
+            engine: v.engine || 'tts',
+            language: v.language || '',
+          }));
+          setVoices(formatted);
+        }
+      } catch {
+        // Keep default popular voices
+      }
+    };
+
     fetchModels();
+    fetchVoices();
     return () => {
       ignore = true;
     };
   }, []);
 
-  const filteredModels = models.filter((m) => {
-    const q = modelSearchQuery.toLowerCase();
-    const id = (m.id || '').toLowerCase();
-    const name = (m.name || '').toLowerCase();
-    return id.includes(q) || name.includes(q);
+  const filteredModels = models;
+
+  const filteredVoices = voices.filter((v) => {
+    const q = voiceSearchQuery.toLowerCase();
+    const id = (v.id || '').toLowerCase();
+    const label = (v.label || '').toLowerCase();
+    const engine = (v.engine || '').toLowerCase();
+    return id.includes(q) || label.includes(q) || engine.includes(q);
   });
 
   const formatTime = (secs) => {
@@ -217,7 +251,7 @@ export default function AudioPlayer({
                 title="Voice and Model Settings"
               >
                 <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="hidden sm:inline capitalize">{selectedVoice}</span>
+                <span className="hidden sm:inline capitalize">{selectedVoice.replace('af_', '').replace('am_', '')}</span>
                 <span className="opacity-50 text-[10px]">({selectedModel})</span>
                 <ChevronDown className="w-3 h-3 opacity-60" />
               </button>
@@ -229,7 +263,7 @@ export default function AudioPlayer({
       {/* Model & Voice Selection Modal */}
       {showModelModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 text-zinc-100">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 text-zinc-100 max-h-[90vh] flex flex-col">
             <button
               onClick={() => setShowModelModal(false)}
               className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200"
@@ -239,81 +273,97 @@ export default function AudioPlayer({
 
             <h3 className="text-base font-bold mb-4 flex items-center gap-2">
               <Sliders className="w-4 h-4 text-indigo-400" />
-              TTS Voice & Model Configuration
+              TTS Engine & Voice Configuration
             </h3>
 
-            {/* Voice selection */}
-            <div className="mb-5">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">
-                Voice
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {voiceOptions.map((v) => (
-                  <button
-                    key={v.id}
-                    onClick={() => onVoiceChange && onVoiceChange(v.id)}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium border text-left transition ${
-                      selectedVoice === v.id
-                        ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
-                        : 'bg-zinc-800/60 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800'
-                    }`}
-                  >
-                    {v.label}
-                  </button>
-                ))}
+            <div className="overflow-y-auto space-y-5 pr-1 flex-1">
+              {/* Model selection */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Model / Engine
+                  </label>
+                  {loadingModels && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {filteredModels.map((m) => {
+                    const mId = m.id || m;
+                    const mName = m.name || mId;
+                    const isSelected = selectedModel === mId;
+                    return (
+                      <button
+                        key={mId}
+                        onClick={() => onModelChange && onModelChange(mId)}
+                        className={`px-3 py-2 rounded-lg text-xs font-medium border text-left transition ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-xs'
+                            : 'bg-zinc-800/60 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800'
+                        }`}
+                      >
+                        <div className="truncate font-semibold">{mId}</div>
+                        <div className="text-[10px] opacity-60 truncate">{mName}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Searchable Voice Selection */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Voice ({filteredVoices.length} available)
+                  </label>
+                </div>
+
+                <div className="relative mb-2">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
+                  <input
+                    type="text"
+                    placeholder="Search voices by name, language, or engine..."
+                    value={voiceSearchQuery}
+                    onChange={(e) => setVoiceSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 border border-zinc-800 rounded-lg p-1.5 bg-zinc-950/40">
+                  {filteredVoices.map((v) => {
+                    const isSelected = selectedVoice === v.id;
+                    return (
+                      <button
+                        key={v.id}
+                        onClick={() => onVoiceChange && onVoiceChange(v.id)}
+                        className={`w-full px-3 py-2 rounded-md text-left text-xs transition flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white font-medium'
+                            : 'text-zinc-300 hover:bg-zinc-800'
+                        }`}
+                      >
+                        <div className="truncate">
+                          <span className="font-semibold">{v.label}</span>
+                          {v.engine && (
+                            <span className="ml-2 text-[10px] opacity-60 uppercase font-mono px-1 py-0.5 rounded bg-black/20">
+                              {v.engine}
+                            </span>
+                          )}
+                        </div>
+                        {isSelected && <span className="text-[10px] opacity-90 ml-2">Selected</span>}
+                      </button>
+                    );
+                  })}
+                  {filteredVoices.length === 0 && (
+                    <p className="text-xs text-zinc-500 text-center py-4">No matching voices found.</p>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Searchable Model Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  TTS Model
-                </label>
-                {loadingModels && <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-500" />}
-              </div>
-
-              <div className="relative mb-2">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
-                <input
-                  type="text"
-                  placeholder="Search models..."
-                  value={modelSearchQuery}
-                  onChange={(e) => setModelSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 border border-zinc-800 rounded-lg p-1.5 bg-zinc-950/40">
-                {filteredModels.map((m) => {
-                  const mId = m.id || m;
-                  const mName = m.name || mId;
-                  const isSelected = selectedModel === mId;
-                  return (
-                    <button
-                      key={mId}
-                      onClick={() => onModelChange && onModelChange(mId)}
-                      className={`w-full px-3 py-2 rounded-md text-left text-xs transition flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white font-medium'
-                          : 'text-zinc-300 hover:bg-zinc-800'
-                      }`}
-                    >
-                      <span className="truncate">{mName}</span>
-                      {isSelected && <span className="text-[10px] opacity-80 ml-2">Active</span>}
-                    </button>
-                  );
-                })}
-                {filteredModels.length === 0 && (
-                  <p className="text-xs text-zinc-500 text-center py-4">No matching models found.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
+            <div className="mt-4 pt-3 border-t border-zinc-800 flex justify-end">
               <button
                 onClick={() => setShowModelModal(false)}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-medium rounded-lg transition"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition shadow-xs"
               >
                 Done
               </button>

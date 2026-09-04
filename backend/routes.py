@@ -57,6 +57,59 @@ async def get_models(search: Optional[str] = None, q: Optional[str] = None):
         "error": err_msg
     }
 
+voices_router = APIRouter(prefix="/api/voices", tags=["voices"])
+
+@voices_router.get("")
+async def get_voices(search: Optional[str] = None, q: Optional[str] = None, engine: Optional[str] = None):
+    """List available TTS voices with search and engine filter support."""
+    query = search or q
+    err_msg = None
+    upstream_available = True
+    try:
+        resp = await tts_client.list_voices()
+        if isinstance(resp, dict) and "voices" in resp:
+            voices = resp["voices"]
+        elif isinstance(resp, list):
+            voices = resp
+        else:
+            voices = []
+    except Exception as e:
+        upstream_available = False
+        err_msg = str(e)
+        voices = [
+            {"id": "af_alloy", "name": "Kokoro af_alloy", "engine": "kokoro"},
+            {"id": "af_heart", "name": "Kokoro af_heart", "engine": "kokoro"},
+            {"id": "af_bella", "name": "Kokoro af_bella", "engine": "kokoro"},
+            {"id": "am_echo", "name": "Kokoro am_echo", "engine": "kokoro"},
+            {"id": "am_onyx", "name": "Kokoro am_onyx", "engine": "kokoro"},
+            {"id": "bf_emma", "name": "Kokoro bf_emma", "engine": "kokoro"},
+        ]
+
+    if engine:
+        e_lower = engine.strip().lower()
+        voices = [v for v in voices if isinstance(v, dict) and v.get("engine", "").lower() == e_lower]
+
+    if query:
+        q_lower = query.strip().lower()
+        filtered = []
+        for v in voices:
+            if isinstance(v, dict):
+                v_id = str(v.get("id", "")).lower()
+                v_name = str(v.get("name", "")).lower()
+                v_lang = str(v.get("language", "")).lower()
+                if q_lower in v_id or q_lower in v_name or q_lower in v_lang:
+                    filtered.append(v)
+            elif q_lower in str(v).lower():
+                filtered.append(v)
+        voices = filtered
+
+    return {
+        "object": "list",
+        "voices": voices,
+        "upstream_available": upstream_available,
+        "error": err_msg
+    }
+
 class CreateDocRequest(BaseModel):
     title: Optional[str] = None
     content: str

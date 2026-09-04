@@ -17,10 +17,10 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [selectedVoice, setSelectedVoice] = useState(() => {
-    return localStorage.getItem('universal_reader_voice') || 'alloy';
+    return localStorage.getItem('universal_reader_voice') || 'af_alloy';
   });
   const [selectedModel, setSelectedModel] = useState(() => {
-    return localStorage.getItem('universal_reader_model') || 'tts-1';
+    return localStorage.getItem('universal_reader_model') || 'kokoro';
   });
 
   const audioRef = useRef(null);
