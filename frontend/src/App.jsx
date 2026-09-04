@@ -1,21 +1,30 @@
 import React, { useState } from 'react';
 import LibraryView from './components/LibraryView';
+import ReaderView from './components/ReaderView';
 
 export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
+  const [activeBlockId, setActiveBlockId] = useState(null);
+  const [readerSettings] = useState({
+    theme: 'dark',
+    fontSize: 18,
+    lineHeight: 1.7,
+    fontFamily: 'serif',
+  });
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       {selectedDocId ? (
-        <div className="p-8 text-center">
-          <p>Document selected: {selectedDocId}</p>
-          <button
-            onClick={() => setSelectedDocId(null)}
-            className="mt-4 px-4 py-2 bg-zinc-800 text-zinc-200 rounded"
-          >
-            Back to Library
-          </button>
-        </div>
+        <ReaderView
+          docId={selectedDocId}
+          onBack={() => {
+            setSelectedDocId(null);
+            setActiveBlockId(null);
+          }}
+          activeBlockId={activeBlockId}
+          onSelectBlock={(id) => setActiveBlockId(id)}
+          settings={readerSettings}
+        />
       ) : (
         <LibraryView onSelectDocument={(id) => setSelectedDocId(id)} />
       )}

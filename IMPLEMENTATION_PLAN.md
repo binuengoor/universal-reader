@@ -25,7 +25,7 @@
 
 ## Phase 4: Reader UI & Document Navigation
 - [x] Build Library View: document grid/list showing title, excerpt, creation date, and delete action.
-- [ ] Build Document Reader View: render blocks sequentially with `data-block-id` attributes.
+- [x] Build Document Reader View: render blocks sequentially with `data-block-id` attributes.
 - [ ] Implement inline text search to jump to and highlight matching blocks.
 - [ ] Add display options drawer: font size, line spacing, and theme switcher (Light, Warm Sepia, OLED Dark).
 
