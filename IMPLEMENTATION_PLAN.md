@@ -10,9 +10,9 @@
 ## Phase 2: Ingestion & Parsing Engine
 - [x] Install ingestion libraries (`pymupdf`, `ebooklib`, `python-docx`, `trafilatura`, `beautifulsoup4`).
 - [x] Implement text parsers for PDF, ePub, DOCX, and raw text.
-- [ ] Implement URL extraction route `POST /api/documents/url` with `trafilatura`.
-- [ ] Implement file upload route `POST /api/documents/upload`.
-- [ ] Implement manual creation route `POST /api/documents/create`.
+- [x] Implement URL extraction route `POST /api/documents/url` with `trafilatura`.
+- [x] Implement file upload route `POST /api/documents/upload`.
+- [x] Implement manual creation route `POST /api/documents/create`.
 - [x] Build chunking utility: split ingested text into 250–500 char blocks and save `meta.json`, `document.md`, and `chunks.json` to `/data/documents/<id>/`.
 
 ## Phase 3: Universal TTS Integration & Audio Caching
