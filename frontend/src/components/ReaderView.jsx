@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+  ArrowLeft, 
+  Loader2, 
+  AlertCircle, 
+  Search, 
+  X, 
+  ChevronUp, 
+  ChevronDown 
+} from 'lucide-react';
 
 export default function ReaderView({
   docId,
@@ -7,12 +15,16 @@ export default function ReaderView({
   activeBlockId,
   onSelectBlock,
   settings = { theme: 'dark', fontSize: 18, lineHeight: 1.7, fontFamily: 'serif' },
-  searchQuery = '',
 }) {
   const [docData, setDocData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const activeBlockRef = useRef(null);
+  
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIdx, setCurrentMatchIdx] = useState(0);
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
     let ignore = false;
@@ -40,7 +52,77 @@ export default function ReaderView({
     };
   }, [docId]);
 
-  // Auto-scroll to active block when it changes
+  // Find matching blocks
+  const matchingBlockIds = useMemo(() => {
+    if (!searchQuery.trim() || !docData?.chunks) return [];
+    const q = searchQuery.toLowerCase();
+    return docData.chunks
+      .filter((chunk) => chunk.text.toLowerCase().includes(q))
+      .map((chunk) => chunk.id);
+  }, [searchQuery, docData]);
+
+  const safeMatchIdx = matchingBlockIds.length > 0 ? Math.min(currentMatchIdx, matchingBlockIds.length - 1) : 0;
+
+  // Auto-scroll to current search match
+  useEffect(() => {
+    if (matchingBlockIds.length > 0) {
+      const targetId = matchingBlockIds[safeMatchIdx];
+      const el = document.querySelector(`[data-block-id="${targetId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [matchingBlockIds, safeMatchIdx]);
+
+  // Keyboard shortcut for Cmd+F / Ctrl+F
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      } else if (e.key === 'Escape' && showSearch) {
+        setShowSearch(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSearch]);
+
+  const goToNextMatch = () => {
+    if (matchingBlockIds.length === 0) return;
+    const nextIdx = (currentMatchIdx + 1) % matchingBlockIds.length;
+    setCurrentMatchIdx(nextIdx);
+    const targetId = matchingBlockIds[nextIdx];
+    const el = document.querySelector(`[data-block-id="${targetId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const goToPrevMatch = () => {
+    if (matchingBlockIds.length === 0) return;
+    const prevIdx = (currentMatchIdx - 1 + matchingBlockIds.length) % matchingBlockIds.length;
+    setCurrentMatchIdx(prevIdx);
+    const targetId = matchingBlockIds[prevIdx];
+    const el = document.querySelector(`[data-block-id="${targetId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        goToPrevMatch();
+      } else {
+        goToNextMatch();
+      }
+    }
+  };
+
+  // Auto-scroll to active block when it changes externally
   useEffect(() => {
     if (activeBlockId !== null && activeBlockId !== undefined) {
       const el = document.querySelector(`[data-block-id="${activeBlockId}"]`);
@@ -86,12 +168,19 @@ export default function ReaderView({
     }
   };
 
-  const highlightText = (text, query) => {
+  const highlightText = (text, query, isCurrentSearchBlock) => {
     if (!query || !query.trim()) return text;
     const parts = text.split(new RegExp(`(${query.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
     return parts.map((part, i) =>
       part.toLowerCase() === query.toLowerCase() ? (
-        <mark key={i} className="bg-amber-400 text-black px-0.5 rounded-xs font-semibold">
+        <mark
+          key={i}
+          className={`${
+            isCurrentSearchBlock
+              ? 'bg-amber-400 text-black font-semibold ring-2 ring-amber-500'
+              : 'bg-amber-300/80 text-black font-medium'
+          } px-0.5 rounded-xs transition-colors`}
+        >
           {part}
         </mark>
       ) : (
@@ -127,6 +216,7 @@ export default function ReaderView({
   }
 
   const { meta, chunks } = docData;
+  const currentSearchTargetBlockId = matchingBlockIds[safeMatchIdx];
 
   return (
     <div className={`min-h-screen transition-colors duration-200 ${getThemeClasses()} pb-32`}>
@@ -156,25 +246,104 @@ export default function ReaderView({
                 <>
                   <span>•</span>
                   <span className="font-medium text-indigo-400">
-                    Block {activeBlockId + 1} of {chunks?.length || 0}
+                    Playing block {activeBlockId + 1}
                   </span>
                 </>
               )}
             </div>
           </div>
         </div>
+
+        {/* Header Right Actions */}
+        <div className="flex items-center gap-2">
+          {!showSearch && (
+            <button
+              onClick={() => {
+                setShowSearch(true);
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+              }}
+              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium"
+              title="Search Document (Cmd+F / Ctrl+F)"
+            >
+              <Search className="w-4 h-4" />
+              <span className="hidden sm:inline">Search</span>
+            </button>
+          )}
+        </div>
       </header>
+
+      {/* Inline Search Bar */}
+      {showSearch && (
+        <div className={`sticky top-[57px] z-20 border-b px-6 py-2.5 flex items-center justify-between gap-3 shadow-xs transition-colors ${
+          settings.theme === 'light'
+            ? 'bg-zinc-100 border-zinc-200'
+            : settings.theme === 'sepia'
+            ? 'bg-[#eedcb8] border-[#dfcaa3]'
+            : 'bg-zinc-900 border-zinc-800'
+        }`}>
+          <div className="flex items-center gap-2 max-w-md w-full">
+            <Search className="w-4 h-4 opacity-50 flex-shrink-0" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search text in document..."
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentMatchIdx(0); }}
+              onKeyDown={handleSearchKeyDown}
+              className="bg-transparent border-0 text-sm focus:outline-none w-full"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            {searchQuery && (
+              <span className="opacity-70 whitespace-nowrap">
+                {matchingBlockIds.length > 0
+                  ? `${safeMatchIdx + 1} of ${matchingBlockIds.length} blocks`
+                  : 'No matches'}
+              </span>
+            )}
+            <button
+              onClick={goToPrevMatch}
+              disabled={matchingBlockIds.length <= 1}
+              className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-30"
+              title="Previous match (Shift+Enter)"
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
+            <button
+              onClick={goToNextMatch}
+              disabled={matchingBlockIds.length <= 1}
+              className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-30"
+              title="Next match (Enter)"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+              }}
+              className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 ml-2"
+              title="Close search (Esc)"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Reader Content Column */}
       <main className="max-w-3xl mx-auto px-6 pt-10">
         <div className="space-y-4">
           {chunks?.map((chunk) => {
             const isActive = activeBlockId === chunk.id;
+            const isCurrentSearchBlock = currentSearchTargetBlockId === chunk.id;
+            const isMatchBlock = matchingBlockIds.includes(chunk.id);
+
             return (
               <div
                 key={chunk.id}
                 data-block-id={chunk.id}
-                ref={isActive ? activeBlockRef : null}
                 onClick={() => onSelectBlock && onSelectBlock(chunk.id)}
                 style={{
                   fontSize: `${settings.fontSize || 18}px`,
@@ -187,7 +356,13 @@ export default function ReaderView({
                       : 'system-ui, -apple-system, sans-serif',
                 }}
                 className={`relative group rounded-xl p-4 transition-all duration-150 cursor-pointer border ${
-                  isActive ? getActiveBlockClasses() : getBlockHoverClasses()
+                  isCurrentSearchBlock
+                    ? 'ring-2 ring-amber-400 bg-amber-500/10 border-amber-400'
+                    : isActive
+                    ? getActiveBlockClasses()
+                    : isMatchBlock
+                    ? 'border-amber-400/40 bg-amber-500/5'
+                    : getBlockHoverClasses()
                 }`}
               >
                 {/* Block index indicator */}
@@ -200,7 +375,7 @@ export default function ReaderView({
                 </div>
 
                 <p className="select-text whitespace-pre-wrap leading-relaxed">
-                  {highlightText(chunk.text, searchQuery)}
+                  {highlightText(chunk.text, searchQuery, isCurrentSearchBlock)}
                 </p>
               </div>
             );
