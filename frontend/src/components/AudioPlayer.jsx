@@ -43,7 +43,7 @@ export default function AudioPlayer({
   const [voiceSearchQuery, setVoiceSearchQuery] = useState('');
   
   // Multi-select engine filter toggles
-  const [selectedEngines, setSelectedEngines] = useState(['edge-tts', 'kokoro', 'piper']);
+  const [selectedEngines, setSelectedEngines] = useState(['edge-tts', 'kokoro', 'piper', 'google-cloud']);
   const [selectedLanguage, setSelectedLanguage] = useState('all');
 
   // Full note audio generation state
@@ -75,6 +75,12 @@ export default function AudioPlayer({
             gender: v.gender || '',
           }));
           setVoices(formatted);
+
+          // Dynamically pre-select all discovered engines
+          const fetchedEngines = Array.from(new Set(formatted.map((v) => v.engine).filter(Boolean)));
+          if (fetchedEngines.length > 0) {
+            setSelectedEngines(fetchedEngines);
+          }
         }
       } catch {
         // ignore
@@ -400,7 +406,7 @@ export default function AudioPlayer({
               <h3 className="text-base font-bold">TTS Engine & Voice Selection</h3>
             </div>
             <p className="text-xs text-zinc-400 mb-4">
-              Toggle engine buttons to filter voices across Edge TTS (zero-CPU), Kokoro (neural), and Piper.
+              Toggle engine buttons to filter voices across Edge TTS, Kokoro (neural), Piper, and Google Cloud.
             </p>
 
             <div className="overflow-y-auto space-y-4 pr-1 flex-1">

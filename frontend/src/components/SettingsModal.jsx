@@ -235,6 +235,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
                 >
                   <option value="edge-tts">edge-tts (Zero CPU, Recommended)</option>
+                  <option value="google-cloud">google-cloud (Google Cloud TTS)</option>
                   <option value="kokoro">kokoro (High Quality Neural)</option>
                   <option value="piper">piper (Local Fast)</option>
                   <option value="tts-1">tts-1 (OpenAI standard)</option>
