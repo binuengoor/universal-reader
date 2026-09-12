@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Server, 
@@ -29,6 +29,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   const [apiKey, setApiKey] = useState('');
   const [defaultModel, setDefaultModel] = useState('edge-tts');
   const [defaultVoice, setDefaultVoice] = useState('en-US-ChristopherNeural');
+  const [availableModels, setAvailableModels] = useState([]);
 
   // Scoped Voices
   const [scopedVoices, setScopedVoices] = useState([]);
@@ -71,6 +72,85 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState(null);
 
+  // Computed models for TTS dropdown
+  const modelOptions = useMemo(() => {
+    const defaultList = [
+      { id: 'edge-tts', name: 'edge-tts (Zero CPU, Recommended)' },
+      { id: 'kokoro', name: 'kokoro (High Quality Neural)' },
+      { id: 'piper', name: 'piper (Local Fast)' },
+      { id: 'google-cloud', name: 'google-cloud (Google Cloud TTS)' },
+      { id: 'tts-1', name: 'tts-1 (OpenAI standard)' },
+      { id: 'tts-1-hd', name: 'tts-1-hd (OpenAI HD)' },
+    ];
+
+    if (!availableModels || availableModels.length === 0) {
+      return defaultList;
+    }
+
+    const fetchedIds = new Set();
+    const result = [];
+
+    availableModels.forEach((m) => {
+      const id = typeof m === 'string' ? m : m.id;
+      const name = typeof m === 'string' ? m : (m.name || m.id);
+      if (id && !fetchedIds.has(id)) {
+        fetchedIds.add(id);
+        result.push({ id, name });
+      }
+    });
+
+    // Ensure common baseline options exist in the list
+    defaultList.forEach((m) => {
+      if (!fetchedIds.has(m.id)) {
+        fetchedIds.add(m.id);
+        result.push(m);
+      }
+    });
+
+    return result;
+  }, [availableModels]);
+
+  // Computed voices for TTS voice dropdown based on selected defaultModel
+  const voiceOptions = useMemo(() => {
+    const fallbackVoices = [
+      { id: 'en-US-ChristopherNeural', name: 'Christopher (Edge TTS)', engine: 'edge-tts', language: 'en-US' },
+      { id: 'en-US-JennyNeural', name: 'Jenny (Edge TTS)', engine: 'edge-tts', language: 'en-US' },
+      { id: 'en-US-GuyNeural', name: 'Guy (Edge TTS)', engine: 'edge-tts', language: 'en-US' },
+      { id: 'en-US-AriaNeural', name: 'Aria (Edge TTS)', engine: 'edge-tts', language: 'en-US' },
+      { id: 'af_heart', name: 'Kokoro af_heart', engine: 'kokoro', language: 'en-US' },
+      { id: 'af_alloy', name: 'Kokoro af_alloy', engine: 'kokoro', language: 'en-US' },
+      { id: 'af_bella', name: 'Kokoro af_bella', engine: 'kokoro', language: 'en-US' },
+      { id: 'am_echo', name: 'Kokoro am_echo', engine: 'kokoro', language: 'en-US' },
+      { id: 'am_onyx', name: 'Kokoro am_onyx', engine: 'kokoro', language: 'en-US' },
+      { id: 'bf_emma', name: 'Kokoro bf_emma', engine: 'kokoro', language: 'en-GB' },
+      { id: 'en_US-lessac-medium', name: 'Lessac (Piper)', engine: 'piper', language: 'en-US' },
+      { id: 'alloy', name: 'Alloy (OpenAI standard)', engine: 'tts-1', language: 'en' },
+      { id: 'echo', name: 'Echo (OpenAI standard)', engine: 'tts-1', language: 'en' },
+      { id: 'fable', name: 'Fable (OpenAI standard)', engine: 'tts-1', language: 'en' },
+      { id: 'onyx', name: 'Onyx (OpenAI standard)', engine: 'tts-1', language: 'en' },
+      { id: 'nova', name: 'Nova (OpenAI standard)', engine: 'tts-1', language: 'en' },
+      { id: 'shimmer', name: 'Shimmer (OpenAI standard)', engine: 'tts-1', language: 'en' },
+    ];
+
+    const allVoices = (availableVoices && availableVoices.length > 0) ? availableVoices : fallbackVoices;
+    const modLower = (defaultModel || '').toLowerCase();
+
+    // Filter by matching engine if available
+    let filtered = allVoices.filter((v) => (v.engine || '').toLowerCase() === modLower);
+
+    // If no voice matches this engine, show all available voices
+    if (filtered.length === 0) {
+      filtered = allVoices;
+    }
+
+    // Always include current defaultVoice if not present so it never gets cleared accidentally
+    if (defaultVoice && !filtered.some((v) => v.id === defaultVoice)) {
+      filtered = [{ id: defaultVoice, name: `${defaultVoice} (Current)`, engine: defaultModel }, ...filtered];
+    }
+
+    return filtered;
+  }, [availableVoices, defaultModel, defaultVoice]);
+
   const fetchTagsData = async () => {
     try {
       const res = await fetch('/api/tags');
@@ -103,9 +183,10 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
         setJobResult(null);
         setTagOpMessage(null);
 
-        const [settingsRes, voicesRes] = await Promise.all([
+        const [settingsRes, voicesRes, modelsRes] = await Promise.all([
           fetch('/api/settings'),
-          fetch('/api/voices')
+          fetch('/api/voices'),
+          fetch('/api/models').catch(() => null)
         ]);
 
         if (!settingsRes.ok) throw new Error('Failed to load settings');
@@ -115,6 +196,16 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
         if (voicesRes.ok) {
           const vData = await voicesRes.json();
           voicesList = vData.voices || [];
+        }
+
+        let modelsList = [];
+        if (modelsRes && modelsRes.ok) {
+          try {
+            const mData = await modelsRes.json();
+            modelsList = Array.isArray(mData.data) ? mData.data : (Array.isArray(mData) ? mData : []);
+          } catch {
+            // ignore
+          }
         }
 
         if (!ignore) {
@@ -133,6 +224,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
           setGlossary(Array.isArray(data.glossary) ? data.glossary : []);
 
           setAvailableVoices(voicesList);
+          setAvailableModels(modelsList);
         }
 
         await fetchTagsData();
@@ -547,19 +639,24 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                       onChange={(e) => {
                         const newMod = e.target.value;
                         setDefaultModel(newMod);
+                        // Auto-select a recommended voice for the chosen engine if available
                         if (newMod === 'edge-tts') {
                           setDefaultVoice('en-US-ChristopherNeural');
                         } else if (newMod === 'kokoro') {
-                          setDefaultVoice('af_alloy');
+                          setDefaultVoice('af_heart');
+                        } else if (newMod === 'piper') {
+                          setDefaultVoice('en_US-lessac-medium');
+                        } else if (newMod.startsWith('tts-1')) {
+                          setDefaultVoice('alloy');
                         }
                       }}
-                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
                     >
-                      <option value="edge-tts">edge-tts (Zero CPU, Recommended)</option>
-                      <option value="google-cloud">google-cloud (Google Cloud TTS)</option>
-                      <option value="kokoro">kokoro (High Quality Neural)</option>
-                      <option value="piper">piper (Local Fast)</option>
-                      <option value="tts-1">tts-1 (OpenAI standard)</option>
+                      {modelOptions.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name || m.id}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -568,13 +665,22 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                       <Mic className="w-3.5 h-3.5 text-zinc-400" />
                       Default Voice
                     </label>
-                    <input
-                      type="text"
+                    <select
                       value={defaultVoice}
                       onChange={(e) => setDefaultVoice(e.target.value)}
-                      placeholder="e.g. af_alloy or en-US-ChristopherNeural"
-                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono"
-                    />
+                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    >
+                      {voiceOptions.map((v) => {
+                        const langSuffix = v.language ? ` (${v.language})` : '';
+                        const engSuffix = v.engine ? ` • ${v.engine}` : '';
+                        const labelText = (v.name && v.name !== v.id) ? `${v.name}${engSuffix}` : `${v.id}${langSuffix}${engSuffix}`;
+                        return (
+                          <option key={v.id} value={v.id}>
+                            {labelText}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </div>
                 </div>
 
@@ -798,11 +904,24 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                     </label>
                     <input
                       type="text"
-                      placeholder="gpt-4o-mini"
+                      list="llm-models-list"
+                      placeholder="e.g. llama-3.3-70b-versatile or gpt-4o-mini"
                       value={llmModel}
                       onChange={(e) => setLlmModel(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono"
+                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono cursor-pointer"
                     />
+                    <datalist id="llm-models-list">
+                      <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Groq / Fast & High Quality)</option>
+                      <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Groq / Ultra Fast)</option>
+                      <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (Groq)</option>
+                      <option value="qwen/qwen3.8-27b">qwen/qwen3.8-27b (Cerebras)</option>
+                      <option value="llama3.1-70b">llama3.1-70b (Cerebras)</option>
+                      <option value="llama3.1-8b">llama3.1-8b (Cerebras)</option>
+                      <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
+                      <option value="gpt-4o">gpt-4o (OpenAI Flagship)</option>
+                      <option value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b (Groq reasoning)</option>
+                      <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet (Anthropic proxy)</option>
+                    </datalist>
                   </div>
                 </div>
 
