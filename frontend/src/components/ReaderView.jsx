@@ -381,12 +381,12 @@ export default function ReaderView({
                 <>
                   <span>•</span>
                   <div className="inline-flex items-center gap-1">
-                    {meta.tags.map((t) => (
+                    {meta.tags.map((tagItem) => (
                       <span
-                        key={t}
-                        className="px-1.5 py-0.2 text-[10px] rounded-sm bg-indigo-500/20 text-indigo-300 font-mono"
+                        key={tagItem}
+                        className={`px-1.5 py-0.2 text-[10px] rounded-sm font-mono ${t.tagHeaderBadge}`}
                       >
-                        #{t}
+                        #{tagItem}
                       </span>
                     ))}
                   </div>

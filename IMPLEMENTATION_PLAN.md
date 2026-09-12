@@ -118,6 +118,8 @@
 ## Phase 15: TTS Sanitization Hardening, Universal Theme Control & PWA Cache Busting
 - [x] Strip horizontal rules (`---`) and stray hash characters (`#`) unconditionally from TTS speech text.
 - [x] Fix audio synthesis route so `clean_text_for_speech` is always enforced on block audio synthesis even if pre-populated in `chunks.json`.
+- [x] Reformat markdown code blocks (```) and tables into natural spoken sentences and conversational summaries in `backend/cleaner.py`.
+- [x] Upgrade tag and badge color palettes across Light, Warm Sepia, and OLED Dark themes for high contrast and legibility.
 - [x] Add global Theme / Display Options button (`Aa`) across all views: Library View (home), Document Editor, and Reader View.
 - [x] Make Table of Contents (Chapters) button permanently visible in Reader View with guided empty state when headings are missing.
 - [x] Fix PWA Service Worker caching by switching HTML navigation to strict Network-First, bumping cache version to `v3`, adding `Cache-Control: no-cache` for entry files, and clearing stale audio disk caches on server.

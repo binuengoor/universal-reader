@@ -79,6 +79,108 @@ def apply_glossary(text: str, glossary: Optional[List[Dict[str, str]]] = None) -
     return result
 
 
+def format_code_fences_for_speech(text: str) -> str:
+    """
+    Transforms markdown code fences (```lang ... ```) into conversational spoken language.
+    Instead of reciting brackets, syntax, and semicolons, it identifies the language
+    and formats commands and code into readable spoken sentences.
+    """
+    pattern = re.compile(r'```([a-zA-Z0-9_-]*)\n?(.*?)\n?```', flags=re.DOTALL)
+
+    def repl(m):
+        lang = m.group(1).strip()
+        code = m.group(2).strip()
+        if not code:
+            return ""
+
+        lang_label = lang.lower() if lang else ""
+        is_shell = lang_label in ("bash", "sh", "zsh", "shell", "cmd", "powershell")
+        lines = [l.strip() for l in code.split("\n") if l.strip()]
+
+        if not lines:
+            return ""
+
+        if is_shell or len(lines) <= 2:
+            lead = f"Command in {lang_label}: " if is_shell else (f"Code snippet in {lang}: " if lang else "Code: ")
+            joined = " and ".join(lines) if is_shell else ", ".join(lines)
+            return f"\n{lead}{joined}.\n"
+
+        lead = f"Code block in {lang}: " if lang else "Code block: "
+        cleaned_lines = []
+        for l in lines[:4]:
+            c = re.sub(r'[{}\[\]();]', ' ', l).strip()
+            c = re.sub(r'\s+', ' ', c)
+            if c:
+                cleaned_lines.append(c)
+
+        inner = ", ".join(cleaned_lines)
+        ellipsis = " and continuing." if len(lines) > 4 else "."
+        return f"\n{lead}{inner}{ellipsis}\n"
+
+    return pattern.sub(repl, text)
+
+
+def format_table_for_speech(text: str) -> str:
+    """
+    Transforms markdown tables (| col | col |) into natural, spoken descriptive sentences.
+    e.g.
+    | Model | Tier | Cost |
+    |---|---|---|
+    | Edge | Free | 0 |
+    -> "Table details. For Edge: Tier is Free, Cost is 0."
+    """
+    lines = text.split("\n")
+    output_lines = []
+    table_buffer = []
+
+    def flush_table(buf: List[str]) -> List[str]:
+        if not buf:
+            return []
+        cleaned_rows = []
+        for l in buf:
+            stripped = l.strip()
+            if re.match(r"^\|?(\s*:?-+:?\s*\|)+\s*$", stripped):
+                continue
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if any(cells):
+                cleaned_rows.append(cells)
+
+        if len(cleaned_rows) < 2:
+            return [" ".join(buf)]
+
+        headers = cleaned_rows[0]
+        data_rows = cleaned_rows[1:]
+        spoken = ["Table details."]
+        for r in data_rows:
+            primary = r[0] if len(r) > 0 else ""
+            pairs = []
+            for i in range(1, len(r)):
+                col_name = headers[i] if i < len(headers) else f"Column {i+1}"
+                val = r[i]
+                if val:
+                    pairs.append(f"{col_name} is {val}")
+            joined_pairs = ", ".join(pairs)
+            if joined_pairs:
+                spoken.append(f"For {primary}: {joined_pairs}.")
+            elif primary:
+                spoken.append(f"{primary}.")
+        return [" ".join(spoken)]
+
+    for line in lines:
+        if "|" in line and (line.strip().startswith("|") or line.strip().endswith("|")):
+            table_buffer.append(line)
+        else:
+            if table_buffer:
+                output_lines.extend(flush_table(table_buffer))
+                table_buffer = []
+            output_lines.append(line)
+
+    if table_buffer:
+        output_lines.extend(flush_table(table_buffer))
+
+    return "\n".join(output_lines)
+
+
 def clean_text_for_speech(text: str, glossary: Optional[List[Dict[str, str]]] = None) -> str:
     """
     Deterministically cleans text to produce natural, smooth speech output:
@@ -100,8 +202,11 @@ def clean_text_for_speech(text: str, glossary: Optional[List[Dict[str, str]]] = 
     if glossary:
         s = apply_glossary(s, glossary)
 
-    # Remove code fences first (keeping text inside)
-    s = CODE_FENCE_PATTERN.sub(r'\1', s)
+    # Format code fences into spoken English before raw syntax stripping
+    s = format_code_fences_for_speech(s)
+
+    # Format markdown tables into spoken descriptive sentences
+    s = format_table_for_speech(s)
     
     # Inline code
     s = INLINE_CODE_PATTERN.sub(r'\1', s)
@@ -163,13 +268,15 @@ def clean_text_for_speech(text: str, glossary: Optional[List[Dict[str, str]]] = 
     return s.strip()
 
 DEFAULT_CLEAN_PROMPT = (
-    "You are a text pre-processor for a Text-to-Speech (TTS) voice synthesizer. "
-    "Clean and normalize the following text so that it reads naturally when spoken out loud. "
+    "You are an expert text pre-processor for a Text-to-Speech (TTS) voice synthesizer. "
+    "Clean, reformat, and normalize the following text so that it reads naturally and pleasantly when spoken out loud. "
     "Rules:\n"
-    "1. Remove all emojis, markdown syntax, raw URLs, and citation brackets (e.g. [1]).\n"
-    "2. Spell out awkward abbreviations or symbols (e.g. '%', '&', '@') if helpful for pronunciation.\n"
-    "3. Keep the exact core meaning, tone, and information intact without adding commentary or meta-text.\n"
-    "4. Return ONLY the cleaned text and nothing else."
+    "1. Remove all emojis, raw URLs, citation brackets (e.g. [1]), and markdown symbols like '#', '***', '---'.\n"
+    "2. Code blocks (```): Do NOT read out verbatim brackets, semicolons, or syntax. In conversational spoken English, summarize or describe what the code block or command accomplishes (e.g., 'Command to run the container: docker compose up -d.').\n"
+    "3. Tables: Do NOT read raw pipes or repeatedly recite column headers. Reformat tables into smooth, natural spoken sentences (e.g., 'The table compares three options: for Option A, speed is fast; for Option B, speed is medium.').\n"
+    "4. Spell out awkward abbreviations or symbols (e.g. '%', '&', '@') if helpful for pronunciation.\n"
+    "5. Keep the exact core meaning, tone, and information intact without adding introductory commentary like 'Here is the cleaned text:'.\n"
+    "6. Return ONLY the spoken text ready for TTS synthesis."
 )
 
 async def llm_clean_text(

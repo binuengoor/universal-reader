@@ -120,7 +120,7 @@ export default function TagInput({
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-500 dark:text-indigo-300 border border-indigo-500/30 rounded-md text-xs font-medium"
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-medium border ${t.tagHeaderBadge}`}
           >
             #{tag}
             <button
@@ -129,7 +129,7 @@ export default function TagInput({
                 e.stopPropagation();
                 removeTag(tag);
               }}
-              className="text-indigo-400 hover:text-indigo-200 hover:bg-indigo-500/40 rounded-xs p-0.5 cursor-pointer transition"
+              className="opacity-70 hover:opacity-100 rounded-xs p-0.5 cursor-pointer transition"
             >
               <X className="w-3 h-3" />
             </button>

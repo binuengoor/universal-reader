@@ -39,9 +39,10 @@ export const themes = {
     tabInactive: 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/60',
 
     // Tags & Badges
-    tag: 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200',
-    tagActive: 'bg-indigo-600 text-white border-indigo-600',
-    badge: 'bg-zinc-100 text-zinc-600 border-zinc-200',
+    tag: 'bg-slate-100 text-slate-800 border border-slate-300 hover:bg-slate-200 shadow-2xs font-medium',
+    tagActive: 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold',
+    tagHeaderBadge: 'bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium',
+    badge: 'bg-slate-100 text-slate-700 border border-slate-300',
 
     // Audio Players
     playerShell: 'bg-white/95 backdrop-blur-xl border border-zinc-200 text-zinc-900 shadow-xl',
@@ -93,9 +94,10 @@ export const themes = {
     tabInactive: 'text-[#7d654a] hover:text-[#2e2013] hover:bg-[#f2e5cf]',
 
     // Tags & Badges
-    tag: 'bg-[#efe1c9] text-[#553f28] border-[#dfcaa3] hover:bg-[#e5d4b8]',
-    tagActive: 'bg-[#8c622f] text-white border-[#8c622f]',
-    badge: 'bg-[#eee0c7] text-[#6e543c] border-[#dfcaa3]',
+    tag: 'bg-[#ebd6b2] text-[#42290d] border border-[#d2b68c] hover:bg-[#e0c89f] shadow-2xs font-medium',
+    tagActive: 'bg-[#8f551c] text-white border-[#8f551c] shadow-xs font-semibold',
+    tagHeaderBadge: 'bg-[#edd8b6] text-[#42290d] border border-[#cfad7a] font-medium',
+    badge: 'bg-[#edd8b6] text-[#4a3014] border border-[#d2b68c]',
 
     // Audio Players
     playerShell: 'bg-[#fbf0d9]/95 backdrop-blur-xl border border-[#dfcaa3] text-[#433422] shadow-xl',
@@ -147,9 +149,10 @@ export const themes = {
     tabInactive: 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50',
 
     // Tags & Badges
-    tag: 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700',
-    tagActive: 'bg-indigo-600 text-white border-indigo-600',
-    badge: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+    tag: 'bg-zinc-800 text-zinc-200 border border-zinc-700 hover:bg-zinc-700 shadow-2xs font-medium',
+    tagActive: 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold',
+    tagHeaderBadge: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium',
+    badge: 'bg-zinc-800 text-zinc-300 border border-zinc-700',
 
     // Audio Players
     playerShell: 'bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 text-zinc-100 shadow-2xl',
