@@ -95,3 +95,23 @@
 - [x] Convert Default Voice from plain text input into a dynamic `<select>` dropdown populated from `availableVoices` matching the selected model/engine.
 - [x] Add popular preset model suggestions (Groq, Cerebras, OpenAI, Anthropic) to LLM Model Name via HTML datalist dropdown.
 - [x] Build frontend, rebuild local Docker container on port 3003, commit, push to `main`, and deploy to `oracle-xmillionmax:3003`.
+
+## Phase 12: Standardized Cohesive Theme System (Home, Players, Modals)
+- [x] Create standardized semantic theme palette helper in `frontend/src/utils/theme.js` unifying Light, Warm Sepia (`#fbf0d9`), and OLED Dark styling.
+- [x] Refactor `LibraryView.jsx` to use theme tokens for header, buttons, search input, status tabs, document cards, tag chips, and intake modals.
+- [x] Refactor `AudioPlayer.jsx` and `MiniPlayer.jsx` to use theme tokens for tracks, controls, block badges, speed menus, and voice popovers.
+- [x] Refactor `DisplaySettingsDrawer.jsx` and `KeyboardShortcutsModal.jsx` to adapt seamlessly to active theme.
+- [x] Validate changes via `./backend/venv/bin/pytest backend/tests -q` and `npm run build`, and verify live rendering.
+
+## Phase 13: Lock-Screen Controls, Auto-Scroll Follow-Along & Auto-Resume (Option A)
+- [ ] Implement MediaSession API integration in `frontend/src/App.jsx` for lock-screen / Bluetooth controls (play, pause, next block, prev block, seek, title & block metadata).
+- [ ] Implement smooth auto-scroll follow-along in `ReaderView.jsx` to keep the active playing block centered, with user manual scroll override and resume indicator.
+- [ ] Implement auto-resume to `last_block_index` upon opening a document in `ReaderView.jsx`.
+- [ ] Validate with frontend test/build, commit, push, and deploy to `oracle-xmillionmax`.
+
+## Phase 14: Chapter Navigation (Table of Contents) & Playback Timing Customization (Option B)
+- [ ] Implement Table of Contents parser in frontend to extract headings (`#`, `##`, `###`) and render a jump-to-chapter drawer/menu.
+- [ ] Implement configurable inter-block pause / silence buffer in `backend/config.py` and frontend playback loop in `App.jsx`.
+- [ ] Add unit tests for inter-block pause settings and heading navigation.
+- [ ] Build, verify end-to-end, commit, push, and deploy to `oracle-xmillionmax`.
+

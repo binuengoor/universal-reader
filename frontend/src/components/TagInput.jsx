@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Tag, X, Plus } from 'lucide-react';
+import { getTheme } from '../utils/theme';
 
 /**
  * Reusable TagInput with live suggestion matching against library tags
@@ -11,8 +12,10 @@ export default function TagInput({
   availableTags = [], // array of strings or [tag, count]
   placeholder = "Add category tag...",
   maxTags = 50,
-  maxTagsPerDoc = 5
+  maxTagsPerDoc = 5,
+  theme = 'dark'
 }) {
+  const t = getTheme(theme);
   const [inputValue, setInputValue] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -112,12 +115,12 @@ export default function TagInput({
     <div className="relative" ref={containerRef}>
       <div 
         onClick={() => inputRef.current?.focus()}
-        className="flex flex-wrap items-center gap-1.5 p-2 bg-zinc-800/80 border border-zinc-700 rounded-lg min-h-[42px] focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500/30 cursor-text transition"
+        className={`flex flex-wrap items-center gap-1.5 p-2 rounded-lg min-h-[42px] cursor-text transition ${t.input}`}
       >
         {tags.map((tag) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-md text-xs font-medium"
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-500 dark:text-indigo-300 border border-indigo-500/30 rounded-md text-xs font-medium"
           >
             #{tag}
             <button
@@ -126,7 +129,7 @@ export default function TagInput({
                 e.stopPropagation();
                 removeTag(tag);
               }}
-              className="text-indigo-400 hover:text-indigo-100 hover:bg-indigo-500/40 rounded-xs p-0.5 cursor-pointer transition"
+              className="text-indigo-400 hover:text-indigo-200 hover:bg-indigo-500/40 rounded-xs p-0.5 cursor-pointer transition"
             >
               <X className="w-3 h-3" />
             </button>
@@ -145,14 +148,14 @@ export default function TagInput({
           onFocus={() => setIsDropdownOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={tags.length === 0 ? placeholder : 'Add more...'}
-          className="flex-1 min-w-[120px] bg-transparent border-0 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-0 p-0.5"
+          className="flex-1 min-w-[120px] bg-transparent border-0 text-sm focus:outline-none focus:ring-0 p-0.5"
         />
       </div>
 
       {/* Suggestion Dropdown */}
       {isDropdownOpen && suggestions.length > 0 && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-          <div className="px-3 py-1.5 text-[10px] uppercase font-semibold tracking-wider text-zinc-500 border-b border-zinc-800 flex justify-between">
+        <div className={`absolute z-50 left-0 right-0 mt-1 ${t.playerPopover} rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto`}>
+          <div className={`px-3 py-1.5 text-[10px] uppercase font-semibold tracking-wider ${t.cardMeta} border-b ${t.divider} flex justify-between`}>
             <span>Existing Library Categories</span>
             <span>{normalizedAvailable.length}/{maxTags} used</span>
           </div>
@@ -167,7 +170,7 @@ export default function TagInput({
               className={`px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition ${
                 idx === highlightedIndex
                   ? 'bg-indigo-600 text-white font-medium'
-                  : 'text-zinc-300 hover:bg-zinc-800'
+                  : `${t.playerPopoverItem}`
               }`}
             >
               <span className="flex items-center gap-1.5">
@@ -182,19 +185,19 @@ export default function TagInput({
 
       {/* When input has text not in suggestions and library has capacity */}
       {isDropdownOpen && inputValue.trim() && !suggestions.some(s => s === inputValue.trim().toLowerCase()) && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl p-2">
+        <div className={`absolute z-50 left-0 right-0 mt-1 ${t.playerPopover} rounded-xl shadow-xl p-2`}>
           <div
             onMouseDown={(e) => {
               e.preventDefault();
               addTag(inputValue);
             }}
-            className="px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 rounded-lg cursor-pointer flex items-center justify-between"
+            className={`px-3 py-1.5 text-xs text-indigo-500 dark:text-indigo-300 ${t.playerPopoverItem} rounded-lg cursor-pointer flex items-center justify-between`}
           >
             <span className="flex items-center gap-1.5">
               <Plus className="w-3.5 h-3.5" />
               Create new category #{inputValue.trim().toLowerCase()}
             </span>
-            <span className="text-[10px] text-zinc-500">
+            <span className={`text-[10px] ${t.cardMeta}`}>
               {normalizedAvailable.length >= maxTags ? 'Limit Reached' : `${normalizedAvailable.length}/${maxTags}`}
             </span>
           </div>

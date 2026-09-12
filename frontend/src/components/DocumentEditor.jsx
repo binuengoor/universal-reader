@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2, Tag, X, Plus, Sparkles } from 'lucide-react';
 import TagInput from './TagInput';
+import { getTheme } from '../utils/theme';
 
-export default function DocumentEditor({ docId, onBack, onSaved }) {
+export default function DocumentEditor({ docId, onBack, onSaved, theme = 'dark' }) {
+  const t = getTheme(theme);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [tags, setTags] = useState([]);
@@ -147,29 +149,29 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black text-zinc-100 flex flex-col items-center justify-center gap-3">
+      <div className={`min-h-screen ${t.page} flex flex-col items-center justify-center gap-3`}>
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-        <p className="text-sm text-zinc-400">Loading document for editing...</p>
+        <p className={`text-sm ${t.cardMeta}`}>Loading document for editing...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 flex flex-col">
+    <div className={`min-h-screen ${t.page} flex flex-col`}>
       {/* Header */}
-      <header className="sticky top-0 z-20 backdrop-blur-md bg-zinc-950/80 border-b border-zinc-800 px-6 py-3 flex items-center justify-between gap-4">
+      <header className={`sticky top-0 z-20 ${t.header} px-6 py-3 flex items-center justify-between gap-4`}>
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="p-2 rounded-lg hover:bg-zinc-800 transition text-zinc-400 hover:text-zinc-200 cursor-pointer"
+            className={`p-2 rounded-lg ${t.iconMuted} hover:opacity-100 transition cursor-pointer`}
             title="Back"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <FileEdit className="w-5 h-5 text-indigo-400" />
-            <h1 className="font-semibold text-sm sm:text-base">Edit Document</h1>
+            <FileEdit className="w-5 h-5 text-indigo-500" />
+            <h1 className={`font-semibold text-sm sm:text-base ${t.cardTitle}`}>Edit Document</h1>
           </div>
         </div>
 
@@ -178,7 +180,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
             type="button"
             onClick={handleAiSuggest}
             disabled={isGeneratingAi || !content.trim()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-500 dark:text-indigo-300 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
             title="Use LLM to suggest title and category tags"
           >
             {isGeneratingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -190,7 +192,7 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
               type="button"
               onClick={handleReset}
               disabled={isSaving}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium rounded-lg transition cursor-pointer"
+              className={`flex items-center gap-1.5 px-3 py-1.5 ${t.btnSecondary} text-xs font-medium rounded-lg transition cursor-pointer`}
             >
               <Undo2 className="w-3.5 h-3.5" />
               <span>Reset</span>
@@ -223,36 +225,37 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
       <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-6 flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="sm:col-span-2">
-            <label htmlFor="document-title-input" className="block text-xs font-medium text-zinc-400 mb-1.5">Document Title</label>
+            <label htmlFor="document-title-input" className={`block text-xs font-medium ${t.cardMeta} mb-1.5`}>Document Title</label>
             <input
               id="document-title-input"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Document title"
-              className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-base font-semibold text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+              className={`w-full px-4 py-2.5 rounded-xl text-base font-semibold transition ${t.input}`}
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5 flex items-center justify-between">
+            <label className={`block text-xs font-medium ${t.cardMeta} mb-1.5 flex items-center justify-between`}>
               <span className="flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5 text-zinc-400" />
+                <Tag className="w-3.5 h-3.5 opacity-60" />
                 Category Tags
               </span>
-              <span className="text-[10px] text-zinc-500">Max 50 Global</span>
+              <span className="text-[10px] opacity-70">Max 50 Global</span>
             </label>
             <TagInput
               tags={tags}
               onChange={setTags}
               availableTags={availableTags}
               placeholder="Add category tag..."
+              theme={theme}
             />
           </div>
         </div>
 
         <div className="flex-1 flex flex-col min-h-[450px]">
-          <div className="flex items-center justify-between mb-1.5 text-xs text-zinc-400">
+          <div className={`flex items-center justify-between mb-1.5 text-xs ${t.cardMeta}`}>
             <label htmlFor="markdown-content-input">Markdown Content</label>
             <div className="flex items-center gap-3 font-mono text-[11px] opacity-70">
               <span>{charCount} chars</span>
@@ -267,11 +270,11 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Document markdown text..."
-            className="flex-1 w-full p-4 bg-zinc-900 border border-zinc-800 rounded-xl text-sm font-mono leading-relaxed text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 resize-y min-h-[400px] transition"
+            className={`flex-1 w-full p-4 rounded-xl text-sm font-mono leading-relaxed resize-y min-h-[400px] transition ${t.input}`}
           />
         </div>
 
-        <p className="text-xs text-zinc-500 leading-normal">
+        <p className={`text-xs ${t.cardMeta} leading-normal`}>
           Tip: When you save changes, the document is re-chunked semantically (250–500 chars per block). The cached audio for previous blocks will be automatically flushed so newly requested audio reflects your edits.
         </p>
       </main>

@@ -26,8 +26,10 @@ import {
   HelpCircle
 } from 'lucide-react';
 import TagInput from './TagInput';
+import { getTheme } from '../utils/theme';
 
 export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, initialShareData, onClearShareData, theme = 'dark' }) {
+  const t = getTheme(theme);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -429,29 +431,18 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     }
   };
 
-  const libBg = theme === 'light'
-    ? 'bg-white text-zinc-900'
-    : theme === 'sepia'
-      ? 'bg-[#f5e6c8] text-[#433422]'
-      : 'bg-zinc-950 text-zinc-100';
-  const libHeader = theme === 'light'
-    ? 'border-b border-zinc-200 bg-white/80 backdrop-blur'
-    : theme === 'sepia'
-      ? 'border-b border-[#d4b896] bg-[#f5e6c8]/80 backdrop-blur'
-      : 'border-b border-zinc-800 bg-zinc-900/50 backdrop-blur';
-
   return (
-    <div className={`min-h-screen ${libBg} pb-20`}>
+    <div className={`min-h-screen ${t.page} pb-20`}>
       {/* Top Navigation */}
-      <header className={`${libHeader} sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4`}>
+      <header className={`${t.header} sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4`}>
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">
               <BookOpen className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h1 className="text-base sm:text-xl font-bold tracking-tight">Universal Reader</h1>
-              <p className="text-[10px] sm:text-xs text-zinc-400">Local TTS & Semantic Reader</p>
+              <h1 className={`text-base sm:text-xl font-bold tracking-tight ${t.headerBrand}`}>Universal Reader</h1>
+              <p className={`text-[10px] sm:text-xs ${t.headerSub}`}>Local TTS & Semantic Reader</p>
             </div>
           </div>
 
@@ -460,16 +451,16 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
             <button
               type="button"
               onClick={() => setActiveModal('upload')}
-              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+              className={`flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
             >
-              <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-zinc-300" />
+              <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Upload File</span>
               <span className="inline sm:hidden">Upload</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveModal('url')}
-              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+              className={`flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
             >
               <LinkIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
               <span className="hidden sm:inline">Ingest URL</span>
@@ -488,7 +479,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               <button
                 type="button"
                 onClick={onOpenShortcuts}
-                className="p-1.5 sm:p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-0.5 cursor-pointer"
+                className={`p-1.5 sm:p-2 rounded-lg transition border ml-0.5 cursor-pointer ${t.btnSecondary}`}
                 title="Keyboard Shortcuts (?)"
               >
                 <HelpCircle className="w-4 h-4" />
@@ -498,7 +489,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="p-1.5 sm:p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 cursor-pointer"
+                className={`p-1.5 sm:p-2 rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
                 title="TTS & Service Settings"
               >
                 <Settings className="w-4 h-4" />
@@ -508,13 +499,12 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         </div>
       </header>
 
-
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-6 pt-6">
         {/* Search, Filter & Bulk Action Toolbar */}
         <div className="space-y-4 mb-6">
           {/* Status Tabs (All, Inbox, Reading, Favorites, Archived) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-zinc-800/80 scrollbar-none">
+          <div className={`flex items-center gap-1.5 overflow-x-auto pb-1 border-b ${t.divider} scrollbar-none`}>
             {[
               { id: 'all', label: 'All', count: counts.all },
               { id: 'inbox', label: 'Inbox', count: counts.inbox, icon: Inbox },
@@ -531,25 +521,27 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                   onClick={() => setStatusTab(tab.id)}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition cursor-pointer flex-shrink-0 border ${
                     isActive
-                      ? 'bg-zinc-800 text-white border-zinc-700 shadow-sm'
-                      : 'text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-900/60'
+                      ? t.tabActive
+                      : `${t.tabInactive} border-transparent`
                   }`}
                 >
                   {IconComponent && (
                     <IconComponent
                       className={`w-3.5 h-3.5 ${
                         tab.id === 'favorites' && isActive
-                          ? 'text-amber-400 fill-amber-400'
+                          ? 'text-amber-500 fill-amber-500'
                           : tab.id === 'favorites'
-                          ? 'text-amber-400'
-                          : 'text-zinc-400'
+                          ? 'text-amber-500'
+                          : t.iconMuted
                       }`}
                     />
                   )}
                   <span>{tab.label}</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      isActive ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800/60 text-zinc-500'
+                      isActive
+                        ? (theme === 'sepia' ? 'bg-[#dfcaa3] text-[#2e2013]' : theme === 'light' ? 'bg-zinc-200 text-zinc-900' : 'bg-zinc-700 text-zinc-200')
+                        : (theme === 'sepia' ? 'bg-[#ede0c8] text-[#7d654a]' : theme === 'light' ? 'bg-zinc-100 text-zinc-600' : 'bg-zinc-800/60 text-zinc-500')
                     }`}
                   >
                     {tab.count}
@@ -562,19 +554,19 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative flex-1 min-w-[240px] max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-400" />
+              <Search className={`w-4 h-4 absolute left-3 top-2.5 ${t.iconMuted}`} />
               <input
                 type="text"
                 placeholder="Search by title, excerpt, or #tag..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+                className={`w-full pl-9 pr-8 py-2 rounded-xl text-xs transition ${t.input}`}
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                  className={`absolute right-2.5 top-2.5 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -583,17 +575,17 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
             {/* Sort & Bulk Select Toolbar */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5 text-xs text-zinc-300">
-                <ArrowUpDown className="w-3.5 h-3.5 text-zinc-400 mr-1.5" />
+              <div className={`flex items-center rounded-xl px-2.5 py-1.5 text-xs ${t.btnSecondary}`}>
+                <ArrowUpDown className={`w-3.5 h-3.5 mr-1.5 ${t.iconMuted}`} />
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-transparent text-xs text-zinc-200 focus:outline-none cursor-pointer"
+                  className="bg-transparent text-xs focus:outline-none cursor-pointer"
                 >
-                  <option value="newest" className="bg-zinc-900">Newest First</option>
-                  <option value="oldest" className="bg-zinc-900">Oldest First</option>
-                  <option value="title" className="bg-zinc-900">Title (A–Z)</option>
-                  <option value="length" className="bg-zinc-900">Length (Longest)</option>
+                  <option value="newest" className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>Newest First</option>
+                  <option value="oldest" className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>Oldest First</option>
+                  <option value="title" className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>Title (A–Z)</option>
+                  <option value="length" className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>Length (Longest)</option>
                 </select>
               </div>
 
@@ -601,13 +593,13 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={handleSelectAllVisible}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs font-medium text-zinc-300 transition cursor-pointer"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
                   title="Select All Visible"
                 >
                   {selectedDocIds.size === filteredAndSortedDocuments.length && filteredAndSortedDocuments.length > 0 ? (
-                    <CheckSquare className="w-3.5 h-3.5 text-indigo-400" />
+                    <CheckSquare className="w-3.5 h-3.5 text-indigo-500" />
                   ) : (
-                    <Square className="w-3.5 h-3.5 text-zinc-400" />
+                    <Square className={`w-3.5 h-3.5 ${t.iconMuted}`} />
                   )}
                   <span>Select All</span>
                 </button>
@@ -618,7 +610,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                   type="button"
                   onClick={handleBulkDelete}
                   disabled={isBulkDeleting}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-500 dark:text-red-300 border border-red-500/30 rounded-xl text-xs font-semibold transition cursor-pointer"
                 >
                   {isBulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                   <span>Delete Selected ({selectedDocIds.size})</span>
@@ -630,7 +622,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
           {/* Tag Filter Pills */}
           {allTagsWithCount.length > 0 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-xs text-zinc-500 flex items-center gap-1 mr-1 flex-shrink-0">
+              <span className={`text-xs ${t.cardMeta} flex items-center gap-1 mr-1 flex-shrink-0`}>
                 <Tag className="w-3 h-3" /> Tags:
               </span>
               <button
@@ -638,8 +630,8 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 onClick={() => setSelectedTag('all')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer flex-shrink-0 border ${
                   selectedTag === 'all'
-                    ? 'bg-indigo-600 border-indigo-500 text-white'
-                    : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                    ? t.tagActive
+                    : t.tag
                 }`}
               >
                 All ({documents.length})
@@ -653,11 +645,11 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                     onClick={() => setSelectedTag(isActive ? 'all' : tag)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer flex-shrink-0 border ${
                       isActive
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                        ? t.tagActive
+                        : t.tag
                     }`}
                   >
-                    #{tag} <span className="text-[10px] opacity-60">({count})</span>
+                    #{tag} <span className="text-[10px] opacity-70">({count})</span>
                   </button>
                 );
               })}
@@ -667,7 +659,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
         {/* Loading / Error States */}
         {loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-3">
+          <div className={`flex flex-col items-center justify-center py-20 gap-3 ${t.cardMeta}`}>
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
             <p>Loading your library...</p>
           </div>
@@ -682,14 +674,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
         {/* Empty State */}
         {!loading && !error && filteredAndSortedDocuments.length === 0 && (
-          <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center bg-zinc-900/20">
-            <div className="w-14 h-14 rounded-2xl bg-zinc-800/80 flex items-center justify-center text-zinc-400 mb-4">
+          <div className={`border border-dashed rounded-2xl p-12 text-center flex flex-col items-center justify-center ${t.card}`}>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 ${t.badge}`}>
               <Layers className="w-7 h-7" />
             </div>
-            <h3 className="text-lg font-medium text-zinc-200">
+            <h3 className={`text-lg font-medium ${t.cardTitle}`}>
               {documents.length === 0 ? 'No documents yet' : 'No matching documents'}
             </h3>
-            <p className="text-sm text-zinc-400 max-w-md mt-1 mb-6">
+            <p className={`text-sm max-w-md mt-1 mb-6 ${t.cardSnippet}`}>
               {documents.length === 0
                 ? 'Add a PDF, ePub, Word document, web article URL, or paste Markdown text to start reading and listening.'
                 : 'Try clearing your search query or selecting a different tag filter.'}
@@ -699,14 +691,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={() => setActiveModal('upload')}
-                  className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
                 >
                   <Upload className="w-4 h-4" /> Upload Document
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveModal('url')}
-                  className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
                 >
                   <LinkIcon className="w-4 h-4 text-purple-400" /> Ingest Article URL
                 </button>
@@ -722,7 +714,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               <button
                 type="button"
                 onClick={() => { setSearchQuery(''); setSelectedTag('all'); }}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold rounded-lg text-zinc-200 transition cursor-pointer"
+                className={`px-4 py-2 text-xs font-semibold rounded-lg transition cursor-pointer ${t.btnSecondary}`}
               >
                 Reset Filters
               </button>
@@ -741,8 +733,8 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <div
                   key={doc.id}
                   onClick={() => onSelectDocument && onSelectDocument(doc.id)}
-                  className={`group relative bg-zinc-900/60 hover:bg-zinc-900 border rounded-2xl p-5 transition cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md ${
-                    isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-zinc-800 hover:border-zinc-700'
+                  className={`group relative rounded-2xl p-5 transition cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-md ${t.card} ${
+                    isSelected ? 'ring-2 ring-indigo-500 border-indigo-500' : ''
                   }`}
                 >
                   <div>
@@ -752,11 +744,11 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                         <button
                           type="button"
                           onClick={(e) => toggleSelectDoc(doc.id, e)}
-                          className="text-zinc-500 hover:text-indigo-400 transition cursor-pointer"
+                          className={`${t.iconMuted} hover:text-indigo-500 transition cursor-pointer`}
                           title="Select document"
                         >
                           {isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-indigo-400" />
+                            <CheckSquare className="w-4 h-4 text-indigo-500" />
                           ) : (
                             <Square className="w-4 h-4 opacity-40 group-hover:opacity-100" />
                           )}
@@ -769,12 +761,12 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                           {doc.source_type || 'text'}
                         </span>
                         {doc.status === 'reading' && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20">
                             Reading
                           </span>
                         )}
                         {doc.status === 'archived' && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${t.badge}`}>
                             Archived
                           </span>
                         )}
@@ -788,11 +780,11 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                           onClick={(e) => handleToggleFavorite(doc.id, !!doc.favorite, e)}
                           className={`p-1.5 rounded-lg transition cursor-pointer ${
                             doc.favorite
-                              ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-400/10'
-                              : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 opacity-0 group-hover:opacity-100'
+                              ? 'text-amber-500 hover:text-amber-400 hover:bg-amber-500/10'
+                              : `${t.iconMuted} hover:opacity-100 opacity-0 group-hover:opacity-100`
                           }`}
                         >
-                          <Star className={`w-4 h-4 ${doc.favorite ? 'fill-amber-400' : ''}`} />
+                          <Star className={`w-4 h-4 ${doc.favorite ? 'fill-amber-500' : ''}`} />
                         </button>
 
                         {/* Quick Archive Toggle */}
@@ -802,8 +794,8 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                           onClick={(e) => handleToggleArchive(doc.id, doc.status, e)}
                           className={`p-1.5 rounded-lg transition cursor-pointer ${
                             doc.status === 'archived'
-                              ? 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10'
-                              : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 opacity-0 group-hover:opacity-100'
+                              ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10'
+                              : `${t.iconMuted} hover:opacity-100 opacity-0 group-hover:opacity-100`
                           }`}
                         >
                           <Archive className="w-4 h-4" />
@@ -818,7 +810,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                                 e.stopPropagation();
                                 onEditDocument(doc.id);
                               }}
-                              className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition cursor-pointer"
+                              className={`p-1.5 ${t.iconMuted} hover:text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition cursor-pointer`}
                             >
                               <FileEdit className="w-4 h-4" />
                             </button>
@@ -827,7 +819,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                             type="button"
                             title="Delete document"
                             onClick={(e) => handleDelete(doc.id, doc.title, e)}
-                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition cursor-pointer"
+                            className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -835,27 +827,27 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                       </div>
                     </div>
 
-                    <h3 className="font-semibold text-zinc-100 group-hover:text-indigo-400 transition line-clamp-2 mb-2">
+                    <h3 className={`font-semibold line-clamp-2 mb-2 transition ${t.cardTitle}`}>
                       {doc.title}
                     </h3>
 
-                    <p className="text-xs text-zinc-400 line-clamp-3 leading-relaxed mb-3">
+                    <p className={`text-xs line-clamp-3 leading-relaxed mb-3 ${t.cardSnippet}`}>
                       {doc.excerpt || 'No preview available.'}
                     </p>
 
                     {/* Tags */}
                     {doc.tags && doc.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-3">
-                        {doc.tags.map((t) => (
+                        {doc.tags.map((tg) => (
                           <span
-                            key={t}
+                            key={tg}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedTag(t);
+                              setSelectedTag(tg);
                             }}
-                            className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-400 hover:bg-indigo-500/20 hover:text-indigo-300 transition"
+                            className={`text-[11px] px-2 py-0.5 rounded-md transition ${t.badge} hover:opacity-80`}
                           >
-                            #{t}
+                            #{tg}
                           </span>
                         ))}
                       </div>
@@ -866,11 +858,11 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                     {/* Reading progress bar */}
                     {readProgress > 0 && (
                       <div className="mb-3">
-                        <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1 font-mono">
+                        <div className={`flex items-center justify-between text-[10px] mb-1 font-mono ${t.cardMeta}`}>
                           <span>Progress</span>
                           <span>{readProgress}% read</span>
                         </div>
-                        <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
+                        <div className={`w-full h-1 rounded-full overflow-hidden ${t.progressBarBg}`}>
                           <div
                             className="h-full bg-indigo-500 rounded-full"
                             style={{ width: `${readProgress}%` }}
@@ -879,14 +871,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                       </div>
                     )}
 
-                    <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs text-zinc-500">
+                    <div className={`pt-3 border-t flex items-center justify-between text-xs ${t.divider} ${t.cardMeta}`}>
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5" />
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1" title="Estimated Listening Time">
-                          <Headphones className="w-3.5 h-3.5 text-indigo-400" />
+                          <Headphones className="w-3.5 h-3.5 text-indigo-500" />
                           <span>~{estimateListenTime(doc.total_chars)}</span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -905,17 +897,17 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
       {/* Upload Modal */}
       {activeModal === 'upload' && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
+          <div className={`${t.modalSurface} border rounded-2xl max-w-md w-full p-6 shadow-2xl relative`}>
             <button
               type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-bold text-zinc-100 mb-1">Upload Document</h3>
-            <p className="text-xs text-zinc-400 mb-4">Supported formats: PDF, DOCX, ePub, Markdown (.md), and TXT.</p>
+            <h3 className={`text-lg font-bold mb-1 ${t.cardTitle}`}>Upload Document</h3>
+            <p className={`text-xs mb-4 ${t.cardSnippet}`}>Supported formats: PDF, DOCX, ePub, Markdown (.md), and TXT.</p>
 
             {modalError && (
               <div className="mb-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-xs text-red-300">
@@ -925,34 +917,35 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
             <form onSubmit={handleUploadSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Select File</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Select File</label>
                 <input
                   type="file"
                   required
                   accept=".pdf,.docx,.epub,.txt,.md"
                   onChange={(e) => setFileToUpload(e.target.files[0] || null)}
-                  className="w-full text-xs text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-zinc-200 hover:file:bg-zinc-700 cursor-pointer"
+                  className={`w-full text-xs file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold ${t.input} cursor-pointer`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Optional Title Override</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Optional Title Override</label>
                 <input
                   type="text"
                   placeholder="e.g. My Important Article (AI generated if blank)"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Category Tags (Max 50 Global)</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Category Tags (Max 50 Global)</label>
                 <TagInput
                   tags={modalTags}
                   onChange={setModalTags}
                   availableTags={allTagsWithCount}
                   placeholder="Choose or create category (AI generated if blank)..."
+                  theme={theme}
                 />
               </div>
 
@@ -960,7 +953,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition cursor-pointer"
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition cursor-pointer ${t.btnSecondary}`}
                 >
                   Cancel
                 </button>
@@ -980,17 +973,17 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
       {/* URL Modal */}
       {activeModal === 'url' && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
+          <div className={`${t.modalSurface} border rounded-2xl max-w-md w-full p-6 shadow-2xl relative`}>
             <button
               type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-bold text-zinc-100 mb-1">Ingest Web Article</h3>
-            <p className="text-xs text-zinc-400 mb-4">Extract clean article text and metadata via trafilatura.</p>
+            <h3 className={`text-lg font-bold mb-1 ${t.cardTitle}`}>Ingest Web Article</h3>
+            <p className={`text-xs mb-4 ${t.cardSnippet}`}>Extract clean article text and metadata via trafilatura.</p>
 
             {modalError && (
               <div className="mb-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-xs text-red-300">
@@ -1000,35 +993,36 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
             <form onSubmit={handleUrlSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Article URL</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Article URL</label>
                 <input
                   type="url"
                   required
                   placeholder="https://example.com/article"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Optional Title Override</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Optional Title Override</label>
                 <input
                   type="text"
                   placeholder="Auto-extracted or AI-generated if blank"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Category Tags (Max 50 Global)</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Category Tags (Max 50 Global)</label>
                 <TagInput
                   tags={modalTags}
                   onChange={setModalTags}
                   availableTags={allTagsWithCount}
                   placeholder="Select or type category (AI generated if blank)..."
+                  theme={theme}
                 />
               </div>
 
@@ -1036,7 +1030,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition cursor-pointer"
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition cursor-pointer ${t.btnSecondary}`}
                 >
                   Cancel
                 </button>
@@ -1056,17 +1050,17 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
       {/* Scratchpad Modal */}
       {activeModal === 'scratch' && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
+          <div className={`${t.modalSurface} border rounded-2xl max-w-lg w-full p-6 shadow-2xl relative`}>
             <button
               type="button"
               onClick={closeModal}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-bold text-zinc-100 mb-1">Paste or Write Text</h3>
-            <p className="text-xs text-zinc-400 mb-4">Paste notes, transcripts, or raw text to chunk and listen.</p>
+            <h3 className={`text-lg font-bold mb-1 ${t.cardTitle}`}>Paste or Write Text</h3>
+            <p className={`text-xs mb-4 ${t.cardSnippet}`}>Paste notes, transcripts, or raw text to chunk and listen.</p>
 
             {modalError && (
               <div className="mb-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-xs text-red-300">
@@ -1076,35 +1070,36 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
 
             <form onSubmit={handleScratchSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Title (Optional)</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Title (Optional)</label>
                 <input
                   type="text"
                   placeholder="Doc title (AI generated if blank)"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Category Tags (Max 50 Global)</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Category Tags (Max 50 Global)</label>
                 <TagInput
                   tags={modalTags}
                   onChange={setModalTags}
                   availableTags={allTagsWithCount}
                   placeholder="Select or type category (AI generated if blank)..."
+                  theme={theme}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Text Content</label>
+                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Text Content</label>
                 <textarea
                   required
                   rows={8}
                   placeholder="Paste your markdown or text here..."
                   value={scratchContent}
                   onChange={(e) => setScratchContent(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 resize-none font-mono"
+                  className={`w-full px-3 py-2 rounded-lg text-sm resize-none font-mono ${t.input}`}
                 />
               </div>
 
@@ -1112,7 +1107,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg text-zinc-300 transition cursor-pointer"
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition cursor-pointer ${t.btnSecondary}`}
                 >
                   Cancel
                 </button>

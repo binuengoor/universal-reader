@@ -19,6 +19,7 @@ import {
   Moon
 } from 'lucide-react';
 import { priorityAudioQueue } from '../utils/priorityAudioQueue';
+import { getTheme } from '../utils/theme';
 
 
 export default function AudioPlayer({
@@ -46,6 +47,7 @@ export default function AudioPlayer({
   settingsVersion = 0,
   theme = 'dark',
 }) {
+  const t = getTheme(theme);
   const [showModelModal, setShowModelModal] = useState(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
   const [voices, setVoices] = useState([]);
@@ -258,16 +260,10 @@ export default function AudioPlayer({
     ? Math.round((fullTask.completed / fullTask.total) * 100) 
     : 0;
 
-  const playerShell = theme === 'light'
-    ? 'bg-white/95 sm:bg-white/90 hover:bg-white/95 backdrop-blur-xl border border-zinc-200/90 text-zinc-900'
-    : theme === 'sepia'
-      ? 'bg-[#f5e6c8]/95 sm:bg-[#f5e6c8]/90 hover:bg-[#f5e6c8]/95 backdrop-blur-xl border border-[#d4b896]/90 text-[#433422]'
-      : 'bg-zinc-950/95 sm:bg-zinc-950/90 hover:bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 text-zinc-100';
-
   return (
     <>
       <div className="fixed bottom-2 sm:bottom-5 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] max-w-4xl z-40 transition-all duration-200 pb-safe">
-        <div className={`${playerShell} rounded-2xl p-2.5 sm:p-4 shadow-2xl flex flex-col gap-2 sm:gap-2.5`}>
+        <div className={`${t.playerShell} rounded-2xl p-2.5 sm:p-4 shadow-2xl flex flex-col gap-2 sm:gap-2.5`}>
           {/* Top Progress / Background Generation Banner */}
           {isThisDocGenerating && (
             <div className="flex items-center justify-between text-[11px] bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-indigo-300">
@@ -291,10 +287,10 @@ export default function AudioPlayer({
           {/* Audio Track Progress Bar */}
           <div
             onClick={handleProgressClick}
-            className="w-full h-1.5 bg-zinc-800 hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative group"
+            className={`w-full h-1.5 ${t.playerTrack} hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative group`}
           >
             <div
-              className="h-full bg-indigo-500 rounded-full transition-all"
+              className={`h-full ${t.playerTrackFill} rounded-full transition-all`}
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -303,10 +299,10 @@ export default function AudioPlayer({
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Left: Block info & Times */}
             <div className="flex items-center gap-3 min-w-0">
-              <div className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-md text-xs font-mono font-medium">
+              <div className={`px-2 py-0.5 ${t.playerBadge} rounded-md text-xs font-mono font-medium`}>
                 Block {totalBlocks > 0 ? displayBlockIndex + 1 : 0} / {totalBlocks}
               </div>
-              <span className="text-xs font-mono text-zinc-400 select-none">
+              <span className={`text-xs font-mono select-none ${t.cardMeta}`}>
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
             </div>
@@ -317,7 +313,7 @@ export default function AudioPlayer({
                 type="button"
                 onClick={onPrevBlock}
                 disabled={!isReadyToPlay || displayBlockIndex <= 0}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition cursor-pointer"
+                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer`}
                 title="Previous Block"
               >
                 <SkipBack className="w-4 h-4" />
@@ -327,7 +323,7 @@ export default function AudioPlayer({
                 type="button"
                 onClick={() => handleJump(-10)}
                 disabled={!audioSrc}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer"
+                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer`}
                 title="Jump back 10s"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -354,7 +350,7 @@ export default function AudioPlayer({
                 type="button"
                 onClick={() => handleJump(10)}
                 disabled={!audioSrc}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer"
+                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer`}
                 title="Jump forward 10s"
               >
                 <RotateCw className="w-4 h-4" />
@@ -365,7 +361,7 @@ export default function AudioPlayer({
                 type="button"
                 onClick={onNextBlock}
                 disabled={!isReadyToPlay || displayBlockIndex >= totalBlocks - 1}
-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-300 disabled:opacity-30 transition cursor-pointer"
+                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer`}
                 title="Next Block"
               >
                 <SkipForward className="w-4 h-4" />
@@ -379,10 +375,10 @@ export default function AudioPlayer({
                 type="button"
                 onClick={isThisDocGenerating ? handleCancelFullAudio : handleGenerateFullAudio}
                 disabled={!isReadyToPlay}
-                className="hidden md:flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium text-zinc-300 hover:text-indigo-300 transition cursor-pointer"
+                className={`hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
                 title="Pre-generate audio for all blocks in background"
               >
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                 <span>{isThisDocGenerating ? 'Stop Full Gen' : 'Gen All'}</span>
               </button>
 
@@ -391,7 +387,7 @@ export default function AudioPlayer({
                 type="button"
                 onClick={handleDownloadFullAudio}
                 disabled={!isReadyToPlay || isExporting}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium text-zinc-300 hover:text-white transition cursor-pointer"
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
                 title="Download full document as single MP3"
               >
                 {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
@@ -399,15 +395,15 @@ export default function AudioPlayer({
               </button>
 
               {/* Speed selector */}
-              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
+              <div className={`flex items-center rounded-lg p-0.5 ${t.btnSecondary}`}>
                 <select
                   value={playbackSpeed}
                   onChange={(e) => onSpeedChange && onSpeedChange(parseFloat(e.target.value))}
-                  className="bg-transparent text-xs font-semibold px-2 py-1 text-zinc-300 focus:outline-none cursor-pointer"
+                  className="bg-transparent text-xs font-semibold px-2 py-1 focus:outline-none cursor-pointer"
                   title="Playback Speed"
                 >
                   {speedOptions.map((s) => (
-                    <option key={s} value={s} className="bg-zinc-900 text-zinc-100">
+                    <option key={s} value={s} className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>
                       {s}x
                     </option>
                   ))}
@@ -421,12 +417,12 @@ export default function AudioPlayer({
                   onClick={() => setShowSleepMenu(!showSleepMenu)}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
                     sleepTimer
-                      ? 'bg-amber-950/40 border-amber-600/50 text-amber-300'
-                      : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-amber-950/40 border-amber-600/50 text-amber-500'
+                      : t.btnSecondary
                   }`}
                   title="Sleep Timer"
                 >
-                  <Moon className={`w-3.5 h-3.5 ${sleepTimer ? 'text-amber-400 fill-amber-400' : ''}`} />
+                  <Moon className={`w-3.5 h-3.5 ${sleepTimer ? 'text-amber-500 fill-amber-500' : ''}`} />
                   {sleepTimerRemaining !== null && sleepTimerRemaining > 0 ? (
                     <span className="font-mono text-[11px] font-semibold">
                       {Math.floor(sleepTimerRemaining / 60)}:{(sleepTimerRemaining % 60).toString().padStart(2, '0')}
@@ -437,8 +433,8 @@ export default function AudioPlayer({
                 </button>
 
                 {showSleepMenu && (
-                  <div className="absolute bottom-full mb-2 right-0 bg-zinc-900 border border-zinc-800 rounded-xl p-1 shadow-2xl z-50 flex flex-col gap-0.5 min-w-36 text-xs">
-                    <div className="px-2 py-1 text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Sleep Timer</div>
+                  <div className={`absolute bottom-full mb-2 right-0 ${t.playerPopover} rounded-xl p-1 shadow-2xl z-50 flex flex-col gap-0.5 min-w-36 text-xs`}>
+                    <div className={`px-2 py-1 text-[10px] uppercase font-bold tracking-wider ${t.cardMeta}`}>Sleep Timer</div>
                     {[
                       { label: 'Off', val: null },
                       { label: '15 minutes', val: 15 },
@@ -457,7 +453,7 @@ export default function AudioPlayer({
                         className={`px-2.5 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer ${
                           sleepTimer === item.val
                             ? 'bg-indigo-600 text-white font-medium'
-                            : 'hover:bg-zinc-800 text-zinc-300'
+                            : `${t.playerPopoverItem}`
                         }`}
                       >
                         <span>{item.label}</span>
@@ -472,14 +468,14 @@ export default function AudioPlayer({
               <button
                 type="button"
                 onClick={() => setShowModelModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition cursor-pointer max-w-[190px]"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer max-w-[190px] ${t.btnSecondary}`}
                 title="Voice & Engine Configuration"
               >
-                <Sliders className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                <Sliders className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
                 <span className="truncate">
                   {currentVoiceObj ? (currentVoiceObj.label.split(' - ')[0] || currentVoiceObj.id) : selectedVoice}
                 </span>
-                <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-800 text-indigo-300 flex-shrink-0">
+                <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${t.playerBadge} flex-shrink-0`}>
                   {selectedModel}
                 </span>
                 <ChevronDown className="w-3 h-3 opacity-60 flex-shrink-0" />
@@ -491,33 +487,29 @@ export default function AudioPlayer({
 
       {/* Model & Voice Selection Modal */}
       {showModelModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`${
-            theme === 'light' ? 'bg-white border-zinc-200 text-zinc-900' :
-            theme === 'sepia' ? 'bg-[#f5e6c8] border-[#d4b896] text-[#433422]' :
-            'bg-zinc-900 border-zinc-800 text-zinc-100'
-          } border rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col`}>
+        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
+          <div className={`${t.modalSurface} border rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col`}>
             <button
               type="button"
               onClick={() => setShowModelModal(false)}
-              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
+              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 transition cursor-pointer`}
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="flex items-center gap-2 mb-1">
-              <Sliders className="w-5 h-5 text-indigo-400" />
-              <h3 className="text-base font-bold">TTS Engine & Voice Selection</h3>
+              <Sliders className="w-5 h-5 text-indigo-500" />
+              <h3 className={`text-base font-bold ${t.cardTitle}`}>TTS Engine & Voice Selection</h3>
             </div>
-            <p className="text-xs text-zinc-400 mb-4">
+            <p className={`text-xs ${t.cardSnippet} mb-4`}>
               Toggle engine buttons to filter voices across Edge TTS, Kokoro (neural), Piper, and Google Cloud.
             </p>
 
             <div className="overflow-y-auto space-y-4 pr-1 flex-1">
               {/* Push-on Push-off Engine Filter Buttons */}
-              <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl p-3">
+              <div className={`${t.card} rounded-xl p-3`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  <span className={`text-xs font-semibold ${t.cardTitle} uppercase tracking-wider`}>
                     Filter by Engine
                   </span>
                   <div className="flex items-center gap-3 text-[11px]">
@@ -527,8 +519,8 @@ export default function AudioPlayer({
                         onClick={() => setOnlyShowFavorites((prev) => !prev)}
                         className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition cursor-pointer font-medium ${
                           onlyShowFavorites
-                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-500'
+                            : `${t.btnSecondary}`
                         }`}
                       >
                         <Star className={`w-3 h-3 ${onlyShowFavorites ? 'fill-amber-400 text-amber-400' : ''}`} />
@@ -538,13 +530,12 @@ export default function AudioPlayer({
                     <button
                       type="button"
                       onClick={toggleAllEngines}
-                      className="text-indigo-400 hover:text-indigo-300 font-medium transition cursor-pointer"
+                      className="text-indigo-500 hover:text-indigo-400 font-medium transition cursor-pointer"
                     >
                       {allEnginesSelected ? 'Unselect All' : 'Select All'}
                     </button>
                   </div>
                 </div>
-
 
                 <div className="flex flex-wrap items-center gap-2">
                   {availableEngines.map((engine) => {
@@ -557,12 +548,12 @@ export default function AudioPlayer({
                         onClick={() => toggleEngine(engine)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-2 transition cursor-pointer ${
                           isToggled
-                            ? 'bg-indigo-600/25 border-indigo-500 text-indigo-300 ring-1 ring-indigo-500/40'
-                            : 'bg-zinc-800/50 border-zinc-700/60 text-zinc-400 hover:bg-zinc-800'
+                            ? 'bg-indigo-600/25 border-indigo-500 text-indigo-500 dark:text-indigo-300 ring-1 ring-indigo-500/40'
+                            : `${t.btnSecondary}`
                         }`}
                       >
                         <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[10px] ${
-                          isToggled ? 'bg-indigo-500 border-indigo-400 text-white' : 'border-zinc-600'
+                          isToggled ? 'bg-indigo-500 border-indigo-400 text-white' : 'border-zinc-500'
                         }`}>
                           {isToggled && <Check className="w-2.5 h-2.5" />}
                         </div>
@@ -577,14 +568,14 @@ export default function AudioPlayer({
               {/* Language Selector & Voice Search */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div className="sm:col-span-1">
-                  <label className="block text-xs font-medium text-zinc-400 mb-1 flex items-center gap-1">
-                    <Globe2 className="w-3.5 h-3.5 text-zinc-500" />
+                  <label className={`block text-xs font-medium ${t.cardMeta} mb-1 flex items-center gap-1`}>
+                    <Globe2 className="w-3.5 h-3.5 opacity-60" />
                     Language / Region
                   </label>
                   <select
                     value={selectedLanguage}
                     onChange={(e) => setSelectedLanguage(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className={`w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer ${t.input}`}
                   >
                     <option value="all">All Languages ({voices.length})</option>
                     {availableLanguages.map(([lang, count]) => (
@@ -596,17 +587,17 @@ export default function AudioPlayer({
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                  <label className={`block text-xs font-medium ${t.cardMeta} mb-1`}>
                     Search Voices ({filteredVoices.length} found)
                   </label>
                   <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
+                    <Search className={`w-4 h-4 absolute left-3 top-2.5 ${t.iconMuted}`} />
                     <input
                       type="text"
                       placeholder="Search voice by name or ID..."
                       value={voiceSearchQuery}
                       onChange={(e) => setVoiceSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                      className={`w-full pl-9 pr-3 py-2 rounded-lg text-xs ${t.input}`}
                     />
                   </div>
                 </div>
@@ -614,7 +605,7 @@ export default function AudioPlayer({
 
               {/* Voice Cards / List */}
               <div>
-                <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1 border border-zinc-800 rounded-xl p-2 bg-zinc-950/40">
+                <div className={`max-h-72 overflow-y-auto space-y-1.5 pr-1 border rounded-xl p-2 ${t.card}`}>
                   {filteredVoices.map((v) => {
                     const isSelected = selectedVoice === v.id;
                     return (
@@ -624,14 +615,14 @@ export default function AudioPlayer({
                         onClick={() => handleSelectVoice(v)}
                         className={`w-full px-3 py-2 rounded-lg text-left text-xs transition flex items-center justify-between cursor-pointer border ${
                           isSelected
-                            ? 'bg-indigo-600/30 border-indigo-500 text-white ring-1 ring-indigo-500/40'
-                            : 'border-transparent text-zinc-300 hover:bg-zinc-800/80'
+                            ? 'bg-indigo-600/30 border-indigo-500 ring-1 ring-indigo-500/40 font-medium'
+                            : `border-transparent ${t.playerPopoverItem}`
                         }`}
                       >
                         <div className="min-w-0 pr-2">
                           <div className="flex items-center gap-2">
                             <span className="font-semibold truncate">{v.label}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.2 bg-zinc-800 text-zinc-400 rounded">
+                            <span className={`text-[10px] font-mono px-1.5 py-0.2 ${t.badge} rounded`}>
                               {v.engine}
                             </span>
                             {v.language && (
@@ -646,7 +637,7 @@ export default function AudioPlayer({
                         </div>
 
                         {isSelected && (
-                          <div className="flex items-center gap-1 text-[11px] text-indigo-400 font-semibold flex-shrink-0">
+                          <div className="flex items-center gap-1 text-[11px] text-indigo-500 font-semibold flex-shrink-0">
                             <Check className="w-3.5 h-3.5" />
                             <span>Active</span>
                           </div>
@@ -655,7 +646,7 @@ export default function AudioPlayer({
                     );
                   })}
                   {filteredVoices.length === 0 && (
-                    <div className="py-8 text-center text-xs text-zinc-500">
+                    <div className={`py-8 text-center text-xs ${t.cardMeta}`}>
                       No voices match your filters. Try selecting more engines or clearing search.
                     </div>
                   )}
@@ -663,9 +654,9 @@ export default function AudioPlayer({
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-zinc-800 flex items-center justify-between">
-              <div className="text-xs text-zinc-400">
-                Selected: <span className="font-semibold text-zinc-200">{selectedVoice}</span> <span className="opacity-60 font-mono">({selectedModel})</span>
+            <div className={`mt-4 pt-3 border-t ${t.divider} flex items-center justify-between`}>
+              <div className={`text-xs ${t.cardMeta}`}>
+                Selected: <span className={`font-semibold ${t.cardTitle}`}>{selectedVoice}</span> <span className="opacity-60 font-mono">({selectedModel})</span>
               </div>
               <button
                 type="button"

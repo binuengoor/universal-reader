@@ -7,6 +7,7 @@ import DocumentEditor from './components/DocumentEditor';
 import SettingsModal from './components/SettingsModal';
 import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
 import { priorityAudioQueue } from './utils/priorityAudioQueue';
+import { getTheme } from './utils/theme';
 
 export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
@@ -451,14 +452,10 @@ export default function App() {
     setCurrentAudioSrc('');
   };
 
-  const appThemeClass = readerSettings.theme === 'light'
-    ? 'bg-white text-zinc-900'
-    : readerSettings.theme === 'sepia'
-      ? 'bg-[#f5e6c8] text-[#433422]'
-      : 'bg-zinc-950 text-zinc-100';
+  const appTheme = getTheme(readerSettings.theme);
 
   return (
-    <div className={`min-h-screen ${appThemeClass}`}>
+    <div className={`min-h-screen ${appTheme.page}`}>
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
@@ -499,6 +496,7 @@ export default function App() {
             setEditingDocId(null);
             handleOpenDocument(docId);
           }}
+          theme={readerSettings.theme}
         />
       ) : selectedDocId ? (
         <>
@@ -607,6 +605,7 @@ export default function App() {
       <KeyboardShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
+        theme={readerSettings.theme}
       />
     </div>
   );
