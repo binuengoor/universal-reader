@@ -14,7 +14,10 @@ import {
   Sparkles,
   Play,
   Tag,
-  RefreshCw
+  RefreshCw,
+  BookOpen,
+  Plus,
+  Trash2
 } from 'lucide-react';
 
 
@@ -39,6 +42,11 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   const [llmModel, setLlmModel] = useState('gpt-4o-mini');
   const [llmPrompt, setLlmPrompt] = useState('');
   const [llmCleanEnabled, setLlmCleanEnabled] = useState(false);
+
+  // Pronunciation Glossary
+  const [glossary, setGlossary] = useState([]);
+  const [newFind, setNewFind] = useState('');
+  const [newReplace, setNewReplace] = useState('');
 
   // LLM Tasks & Batch Jobs
   const [activeJob, setActiveJob] = useState(null); // 'title' | 'tags' | 'clean_text' | 'all'
@@ -122,6 +130,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
           setLlmModel(data.llm_model || 'gpt-4o-mini');
           setLlmPrompt(data.llm_prompt || '');
           setLlmCleanEnabled(Boolean(data.llm_clean_enabled));
+          setGlossary(Array.isArray(data.glossary) ? data.glossary : []);
 
           setAvailableVoices(voicesList);
         }
@@ -159,10 +168,14 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Batch job failed');
 
+      const skipped = data.skipped_count || 0;
       setJobResult({
         success: true,
-        message: `Batch job '${jobType}' completed: ${data.processed_count} of ${data.total_evaluated} documents updated.`,
-        data: data.results
+        message: `Batch job '${jobType}' finished: ${data.processed_count} updated, ${skipped} skipped (already up to date) out of ${data.total_evaluated} documents evaluated.`,
+        data: data.results,
+        processed_count: data.processed_count,
+        skipped_count: skipped,
+        total: data.total_evaluated
       });
 
       await fetchTagsData();
@@ -298,6 +311,22 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
     });
   };
 
+  const handleAddGlossaryItem = (e) => {
+    e.preventDefault();
+    const findTrimmed = newFind.trim();
+    if (!findTrimmed) return;
+    setGlossary((prev) => [
+      ...prev.filter((item) => item.find.toLowerCase() !== findTrimmed.toLowerCase()),
+      { find: findTrimmed, replace: newReplace.trim() }
+    ]);
+    setNewFind('');
+    setNewReplace('');
+  };
+
+  const handleRemoveGlossaryItem = (findToRemove) => {
+    setGlossary((prev) => prev.filter((item) => item.find !== findToRemove));
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
@@ -320,6 +349,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
           llm_model: llmModel.trim(),
           llm_prompt: llmPrompt.trim(),
           llm_clean_enabled: llmCleanEnabled,
+          glossary: glossary,
         }),
       });
 
@@ -394,6 +424,19 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
           >
             <Star className="w-3.5 h-3.5" />
             Favorite Voices {scopedVoices.length > 0 && `(${scopedVoices.length})`}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('pronunciation')}
+            className={`px-3 py-2 border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === 'pronunciation'
+                ? 'border-indigo-500 text-indigo-400 font-semibold'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Pronunciation {glossary.length > 0 && `(${glossary.length})`}
           </button>
 
           <button
@@ -616,6 +659,70 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                         </div>
                       );
                     })}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: Pronunciation Glossary */}
+            {activeTab === 'pronunciation' && (
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-zinc-200">Pronunciation & Acronym Glossary</h4>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    Define phonetic substitutions for acronyms, technical jargon, or names so the voice synthesizer pronounces them accurately.
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Word (e.g. k8s)"
+                    value={newFind}
+                    onChange={(e) => setNewFind(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Spoken as (e.g. Kubernetes)"
+                    value={newReplace}
+                    onChange={(e) => setNewReplace(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddGlossaryItem}
+                    disabled={!newFind.trim()}
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition cursor-pointer flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+
+                <div className="border border-zinc-800 rounded-xl divide-y divide-zinc-800/60 max-h-52 overflow-y-auto bg-zinc-800/30">
+                  {glossary.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-zinc-500">
+                      No pronunciation rules defined yet. Add pairs like <code className="text-zinc-400">FastAPI</code> → <code className="text-zinc-400">Fast A-P-I</code>.
+                    </div>
+                  ) : (
+                    glossary.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between px-3 py-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <span className="font-mono text-zinc-200 bg-zinc-800 px-1.5 py-0.5 rounded text-[11px] truncate">{item.find}</span>
+                          <span className="text-zinc-500 shrink-0">→</span>
+                          <span className="text-indigo-300 font-medium truncate">{item.replace}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGlossaryItem(item.find)}
+                          className="text-zinc-500 hover:text-red-400 transition p-1 shrink-0 cursor-pointer"
+                          title="Remove rule"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
