@@ -190,13 +190,16 @@ async def llm_clean_text(
 
     system_prompt = prompt.strip() if prompt and prompt.strip() else DEFAULT_CLEAN_PROMPT
 
+    # Bound output tokens to input length + buffer to prevent rate limit spikes
+    estimated_tokens = max(100, int(len(text) / 2))
     payload: Dict[str, Any] = {
         "model": llm_model or "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text}
         ],
-        "temperature": 0.2
+        "temperature": 0.2,
+        "max_tokens": min(estimated_tokens, 1500)
     }
 
     try:
@@ -280,6 +283,7 @@ async def llm_generate_title_and_tags(
             {"role": "user", "content": f"Document text excerpt:\n\n{sample_content}"}
         ],
         "temperature": 0.2,
+        "max_tokens": 150,
         "response_format": {"type": "json_object"}
     }
 
