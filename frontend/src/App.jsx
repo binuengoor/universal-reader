@@ -299,6 +299,94 @@ export default function App() {
     }
   };
 
+  // MediaSession API Integration (Lock-screen & Bluetooth controls)
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    const docTitle = audioDoc?.title || 'Universal Reader';
+    const blockText = totalBlocks > 0
+      ? `Block ${activeBlockId !== null ? activeBlockId + 1 : 1} of ${totalBlocks}`
+      : 'Ready';
+
+    if (window.MediaMetadata) {
+      try {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: docTitle,
+          artist: blockText,
+          album: 'Universal Reader',
+          artwork: [
+            { src: '/favicon.svg', sizes: '512x512', type: 'image/svg+xml' },
+          ],
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    } catch {
+      // ignore
+    }
+
+    const setAction = (action, handler) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {
+        // unsupported action in browser
+      }
+    };
+
+    setAction('play', () => handleTogglePlay());
+    setAction('pause', () => handleTogglePlay());
+    setAction('previoustrack', () => handlePrevBlock());
+    setAction('nexttrack', () => handleNextBlock());
+    setAction('seekbackward', (details) => {
+      const offset = details?.seekOffset || 10;
+      handleSeek(Math.max(0, currentTime - offset));
+    });
+    setAction('seekforward', (details) => {
+      const offset = details?.seekOffset || 10;
+      handleSeek(Math.min(duration, currentTime + offset));
+    });
+    setAction('seekto', (details) => {
+      if (details?.seekTime !== undefined) {
+        handleSeek(details.seekTime);
+      }
+    });
+
+    return () => {
+      const clearAction = (action) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, null);
+        } catch {}
+      };
+      clearAction('play');
+      clearAction('pause');
+      clearAction('previoustrack');
+      clearAction('nexttrack');
+      clearAction('seekbackward');
+      clearAction('seekforward');
+      clearAction('seekto');
+    };
+  }, [audioDoc?.title, activeBlockId, totalBlocks, isPlaying, currentTime, duration, playbackSpeed]);
+
+  // Update MediaSession Position State
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+    if (duration > 0 && !isNaN(duration) && !isNaN(currentTime)) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(0, duration),
+          playbackRate: playbackSpeed,
+          position: Math.min(Math.max(0, currentTime), duration),
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }, [currentTime, duration, playbackSpeed]);
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {

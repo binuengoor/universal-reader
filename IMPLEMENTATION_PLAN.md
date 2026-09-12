@@ -104,10 +104,10 @@
 - [x] Validate changes via `./backend/venv/bin/pytest backend/tests -q` and `npm run build`, and verify live rendering.
 
 ## Phase 13: Lock-Screen Controls, Auto-Scroll Follow-Along & Auto-Resume (Option A)
-- [ ] Implement MediaSession API integration in `frontend/src/App.jsx` for lock-screen / Bluetooth controls (play, pause, next block, prev block, seek, title & block metadata).
-- [ ] Implement smooth auto-scroll follow-along in `ReaderView.jsx` to keep the active playing block centered, with user manual scroll override and resume indicator.
-- [ ] Implement auto-resume to `last_block_index` upon opening a document in `ReaderView.jsx`.
-- [ ] Validate with frontend test/build, commit, push, and deploy to `oracle-xmillionmax`.
+- [x] Implement MediaSession API integration in `frontend/src/App.jsx` for lock-screen / Bluetooth controls (play, pause, next block, prev block, seek, title & block metadata).
+- [x] Implement smooth auto-scroll follow-along in `ReaderView.jsx` to keep the active playing block centered, with user manual scroll override and resume indicator.
+- [x] Implement auto-resume to `last_block_index` upon opening a document in `ReaderView.jsx`.
+- [x] Validate with frontend test/build, commit, push, and deploy to `oracle-xmillionmax`.
 
 ## Phase 14: Chapter Navigation (Table of Contents) & Playback Timing Customization (Option B)
 - [ ] Implement Table of Contents parser in frontend to extract headings (`#`, `##`, `###`) and render a jump-to-chapter drawer/menu.

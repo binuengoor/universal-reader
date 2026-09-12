@@ -12,7 +12,8 @@ import {
   Pause,
   FileEdit,
   Tag,
-  Clock
+  Clock,
+  LocateFixed
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -39,8 +40,15 @@ export default function ReaderView({
   const [currentMatchIdx, setCurrentMatchIdx] = useState(0);
   const searchInputRef = useRef(null);
 
+  // Auto-scroll & Follow-along state
+  const [isScrolledAway, setIsScrolledAway] = useState(false);
+  const isProgrammaticScrollRef = useRef(false);
+  const initialScrollDoneRef = useRef(false);
+
   useEffect(() => {
     let ignore = false;
+    initialScrollDoneRef.current = false;
+    setIsScrolledAway(false);
     const fetchDoc = async () => {
       try {
         setLoading(true);
@@ -135,15 +143,73 @@ export default function ReaderView({
     }
   };
 
-  // Auto-scroll to active block when it changes externally
-  useEffect(() => {
+  // Smooth scroll to active block helper
+  const scrollToActiveBlock = (smooth = true) => {
     if (activeBlockId !== null && activeBlockId !== undefined) {
       const el = document.querySelector(`[data-block-id="${activeBlockId}"]`);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        isProgrammaticScrollRef.current = true;
+        el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+        setIsScrolledAway(false);
+        setTimeout(() => {
+          isProgrammaticScrollRef.current = false;
+        }, 650);
       }
     }
+  };
+
+  // Detect manual user scrolling to pause follow-along
+  useEffect(() => {
+    const handleUserScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
+      if (activeBlockId === null || activeBlockId === undefined) return;
+
+      const el = document.querySelector(`[data-block-id="${activeBlockId}"]`);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        // If block is scrolled off screen
+        const isOffScreen = rect.bottom < 80 || rect.top > window.innerHeight - 80;
+        setIsScrolledAway(isOffScreen);
+      }
+    };
+
+    window.addEventListener('wheel', handleUserScroll, { passive: true });
+    window.addEventListener('touchmove', handleUserScroll, { passive: true });
+    return () => {
+      window.removeEventListener('wheel', handleUserScroll);
+      window.removeEventListener('touchmove', handleUserScroll);
+    };
   }, [activeBlockId]);
+
+  // Auto-scroll to active block when it changes externally (unless user scrolled away)
+  useEffect(() => {
+    if (activeBlockId !== null && activeBlockId !== undefined && !isScrolledAway) {
+      scrollToActiveBlock(true);
+    }
+  }, [activeBlockId]);
+
+  // Auto-resume to last_block_index on initial document render
+  useEffect(() => {
+    if (docData && !initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
+      const targetId = activeBlockId !== null && activeBlockId !== undefined
+        ? activeBlockId
+        : (docData.meta?.last_block_index || 0);
+
+      if (targetId > 0) {
+        setTimeout(() => {
+          const el = document.querySelector(`[data-block-id="${targetId}"]`);
+          if (el) {
+            isProgrammaticScrollRef.current = true;
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => {
+              isProgrammaticScrollRef.current = false;
+            }, 650);
+          }
+        }, 200);
+      }
+    }
+  }, [docData, activeBlockId]);
 
   const getThemeClasses = () => {
     switch (settings.theme) {
@@ -513,6 +579,19 @@ export default function ReaderView({
         </div>
       </main>
 
+      {/* Floating Follow-Along Resume Pill */}
+      {isScrolledAway && activeBlockId !== null && activeBlockId !== undefined && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <button
+            type="button"
+            onClick={() => scrollToActiveBlock(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-full shadow-2xl transition cursor-pointer active:scale-95 border border-indigo-400/40"
+          >
+            <LocateFixed className="w-3.5 h-3.5 animate-pulse" />
+            <span>Follow along paused • Jump to Block {activeBlockId + 1}</span>
+          </button>
+        </div>
+      )}
 
       {/* Kindle Display Options Drawer */}
       <DisplaySettingsDrawer
