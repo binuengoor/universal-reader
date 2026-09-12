@@ -110,8 +110,12 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
     return result;
   }, [availableModels]);
 
-  // Computed voices for TTS voice dropdown based on selected defaultModel
+  // Computed voices for TTS voice dropdown: only populate when a model is selected, strictly filtering by that model
   const voiceOptions = useMemo(() => {
+    if (!defaultModel || !defaultModel.trim()) {
+      return [];
+    }
+
     const fallbackVoices = [
       { id: 'en-US-ChristopherNeural', name: 'Christopher (Edge TTS)', engine: 'edge-tts', language: 'en-US' },
       { id: 'en-US-JennyNeural', name: 'Jenny (Edge TTS)', engine: 'edge-tts', language: 'en-US' },
@@ -133,17 +137,28 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
     ];
 
     const allVoices = (availableVoices && availableVoices.length > 0) ? availableVoices : fallbackVoices;
-    const modLower = (defaultModel || '').toLowerCase();
+    const modLower = defaultModel.trim().toLowerCase();
 
-    // Filter by matching engine if available
-    let filtered = allVoices.filter((v) => (v.engine || '').toLowerCase() === modLower);
+    // Map common model names to engine IDs if applicable
+    const normalizeEngine = (eng, mod) => {
+      const e = (eng || '').toLowerCase();
+      const m = (mod || '').toLowerCase();
+      if (e === m) return true;
+      if (m.startsWith('tts-1') && (e === 'tts-1' || e === 'openai')) return true;
+      if (m === 'google-tts' && e === 'google-cloud') return true;
+      if (m === 'google-cloud' && e === 'google-tts') return true;
+      return false;
+    };
 
-    // If no voice matches this engine, show all available voices
+    // Filter strictly by matching selected model/engine
+    let filtered = allVoices.filter((v) => normalizeEngine(v.engine, modLower));
+
+    // If still empty (e.g. custom upstream model id without explicit engine match), show voices matching model id substring
     if (filtered.length === 0) {
-      filtered = allVoices;
+      filtered = allVoices.filter((v) => (v.engine || '').toLowerCase().includes(modLower) || (v.id || '').toLowerCase().includes(modLower));
     }
 
-    // Always include current defaultVoice if not present so it never gets cleared accidentally
+    // Always include current defaultVoice if already assigned to this model
     if (defaultVoice && !filtered.some((v) => v.id === defaultVoice)) {
       filtered = [{ id: defaultVoice, name: `${defaultVoice} (Current)`, engine: defaultModel }, ...filtered];
     }
@@ -648,10 +663,13 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                           setDefaultVoice('en_US-lessac-medium');
                         } else if (newMod.startsWith('tts-1')) {
                           setDefaultVoice('alloy');
+                        } else {
+                          setDefaultVoice('');
                         }
                       }}
                       className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
                     >
+                      <option value="">-- Select a model --</option>
                       {modelOptions.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name || m.id}
@@ -668,18 +686,25 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                     <select
                       value={defaultVoice}
                       onChange={(e) => setDefaultVoice(e.target.value)}
-                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      disabled={!defaultModel || voiceOptions.length === 0}
+                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 focus:outline-none focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {voiceOptions.map((v) => {
-                        const langSuffix = v.language ? ` (${v.language})` : '';
-                        const engSuffix = v.engine ? ` • ${v.engine}` : '';
-                        const labelText = (v.name && v.name !== v.id) ? `${v.name}${engSuffix}` : `${v.id}${langSuffix}${engSuffix}`;
-                        return (
-                          <option key={v.id} value={v.id}>
-                            {labelText}
-                          </option>
-                        );
-                      })}
+                      {!defaultModel ? (
+                        <option value="">Select a model first</option>
+                      ) : voiceOptions.length === 0 ? (
+                        <option value="">No voices available for {defaultModel}</option>
+                      ) : (
+                        voiceOptions.map((v) => {
+                          const langSuffix = v.language ? ` (${v.language})` : '';
+                          const engSuffix = v.engine ? ` • ${v.engine}` : '';
+                          const labelText = (v.name && v.name !== v.id) ? `${v.name}${engSuffix}` : `${v.id}${langSuffix}${engSuffix}`;
+                          return (
+                            <option key={v.id} value={v.id}>
+                              {labelText}
+                            </option>
+                          );
+                        })
+                      )}
                     </select>
                   </div>
                 </div>
