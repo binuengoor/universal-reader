@@ -78,3 +78,14 @@
 - [x] Update `SettingsModal` to rename "AI Text Cleaner" to "LLM Engine", add "LLM Tasks & Batch Jobs" tab, and Tag Health / Consolidation Manager.
 - [x] Add Reader View QoL enhancements: word count, estimated reading/listening time badges, and tag chips in header.
 - [x] Run full backend pytest suite, frontend build, rebuild Docker container, and verify live.
+
+## Phase 10: State-Tracked Batch LLM, Persistent Global Player & Reader Power Suite
+- [x] Implement SHA-256 content_hash calculation, llm_state metadata persistence, and smart skipping in backend/routes.py and backend/chunking.py.
+- [ ] Implement Pronunciation Glossary configuration in backend/config.py and phonetic replacements in backend/cleaner.py.
+- [ ] Implement Document Status Lifecycle (inbox/reading/archived), favorite, and last_block_index progress tracking in backend routes.
+- [ ] Write backend unit tests in backend/tests/test_phase10_features.py and verify all test suites pass.
+- [ ] Implement Pronunciation Glossary editor and Batch Results feedback counters in frontend/src/components/SettingsModal.jsx.
+- [ ] Implement Global Persistent Audio Player with floating mini-player bar across all views and sleep timer.
+- [ ] Implement Library Status Tabs (All/Inbox/Reading/Archived/Favorites), Quick Archive/Star toggles, and Full-Text search in frontend/src/components/LibraryView.jsx.
+- [ ] Implement Keyboard Shortcuts HUD (?) and PWA Web Share Target handling in frontend/src/App.jsx and manifest.json.
+- [ ] Build frontend, verify end-to-end, commit, push to GitHub, monitor CI, and deploy to oracle-xmillionmax:3003.

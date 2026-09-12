@@ -1,19 +1,24 @@
+import hashlib
+import json
 import os
 import re
-import json
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 from backend.cleaner import clean_text_for_speech
 
 # Base storage directory: defaults to data/documents in the project root
 BASE_DATA_DIR = os.environ.get("DATA_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "documents")))
 
+def compute_hash(text: str) -> str:
+    """Compute SHA-256 hex digest for text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
 def chunk_text(text: str, min_chars: int = 250, max_chars: int = 500) -> List[Dict]:
     """
     Split text into semantic blocks between min_chars and max_chars.
     Breaks on paragraphs and sentence boundaries.
-    Generates both visual raw `text` and cleaned `speech_text` for TTS.
+    Generates visual raw `text`, SHA-256 `raw_hash`, and cleaned `speech_text` for TTS.
     """
     cleaned = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not cleaned:
@@ -47,7 +52,9 @@ def chunk_text(text: str, min_chars: int = 250, max_chars: int = 500) -> List[Di
         chunks.append({
             "id": len(chunks),
             "text": block_text,
+            "raw_hash": compute_hash(block_text),
             "speech_text": speech_text,
+            "speech_cleaned": False,
             "char_count": len(block_text)
         })
 
@@ -85,6 +92,9 @@ def chunk_text(text: str, min_chars: int = 250, max_chars: int = 500) -> List[Di
             if word_buf:
                 current_parts = word_buf
                 current_len = sum(len(w) for w in word_buf) + len(word_buf) - 1
+            else:
+                current_parts.append(unit)
+                current_len += unit_len + (1 if len(current_parts) > 1 else 0)
         else:
             current_parts.append(unit)
             current_len += unit_len + (1 if len(current_parts) > 1 else 0)
@@ -95,20 +105,44 @@ def chunk_text(text: str, min_chars: int = 250, max_chars: int = 500) -> List[Di
     return chunks
 
 
-def save_document(doc_id: str, title: str, source_type: str, text: str, chunks: List[Dict], tags: Optional[List[str]] = None) -> str:
+def save_document(
+    doc_id: str,
+    title: str,
+    source_type: str,
+    text: str,
+    chunks: List[Dict],
+    tags: Optional[List[str]] = None,
+    llm_state: Optional[Dict] = None
+) -> str:
     """Save document metadata, raw markdown, and chunks in the storage directory."""
     doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
     os.makedirs(doc_dir, exist_ok=True)
     os.makedirs(os.path.join(doc_dir, "audio_cache"), exist_ok=True)
+
+    content_hash = compute_hash(text)
+    initial_llm_state = {
+        "title_hash": None,
+        "tags_hash": None,
+        "speech_hash": None,
+        "last_processed_at": None,
+    }
+    if llm_state:
+        initial_llm_state.update(llm_state)
 
     meta = {
         "id": doc_id,
         "title": title,
         "source_type": source_type,
         "tags": [t.strip().lower() for t in (tags or []) if t and t.strip()],
+        "status": "inbox",
+        "favorite": False,
+        "last_block_index": 0,
+        "progress_pct": 0.0,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "block_count": len(chunks),
-        "total_chars": len(text)
+        "total_chars": len(text),
+        "content_hash": content_hash,
+        "llm_state": initial_llm_state
     }
 
     with open(os.path.join(doc_dir, "meta.json"), "w", encoding="utf-8") as f:

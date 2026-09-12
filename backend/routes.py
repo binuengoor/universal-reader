@@ -1,12 +1,13 @@
-import os
+import hashlib
 import json
+import os
 import shutil
 import trafilatura
 from datetime import datetime, timezone
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from typing import Any, Dict, List, Optional, Tuple
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any, Tuple
 
 from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
@@ -333,6 +334,7 @@ async def update_document(doc_id: str, req: UpdateDocRequest):
 
     meta["block_count"] = len(chunks)
     meta["total_chars"] = len(content)
+    meta["content_hash"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     # Write document.md
@@ -815,6 +817,7 @@ async def run_batch_llm_job(req: BatchLlmRequest):
 
     results = []
     processed_count = 0
+    skipped_count = 0
 
     for doc_id in all_docs:
         doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
@@ -831,6 +834,18 @@ async def run_batch_llm_job(req: BatchLlmRequest):
             with open(doc_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
+            content_hash = meta.get("content_hash")
+            if not content_hash:
+                content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                meta["content_hash"] = content_hash
+
+            llm_state = meta.get("llm_state") or {
+                "title_hash": None,
+                "tags_hash": None,
+                "speech_hash": None,
+                "last_processed_at": None,
+            }
+
             modified = False
             result_item = {"id": doc_id, "title": meta.get("title")}
 
@@ -838,7 +853,10 @@ async def run_batch_llm_job(req: BatchLlmRequest):
             if req.job_type in ("title", "all"):
                 curr_title = meta.get("title", "")
                 is_default_title = curr_title.startswith("Doc - ") or curr_title.startswith("Web - ")
-                if req.overwrite or is_default_title or not curr_title:
+                should_run_title = req.overwrite or (
+                    llm_state.get("title_hash") != content_hash and (is_default_title or not curr_title)
+                )
+                if should_run_title:
                     all_tags = get_all_library_tags()
                     new_title, _ = await llm_generate_title_and_tags(
                         content=content,
@@ -850,12 +868,16 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                     if new_title:
                         meta["title"] = new_title
                         result_item["new_title"] = new_title
+                        llm_state["title_hash"] = content_hash
                         modified = True
 
             # 2. Tag generation with 50-tag limit
             if req.job_type in ("tags", "all"):
                 curr_tags = meta.get("tags", [])
-                if req.overwrite or not curr_tags:
+                should_run_tags = req.overwrite or (
+                    llm_state.get("tags_hash") != content_hash and not curr_tags
+                )
+                if should_run_tags:
                     all_tags = get_all_library_tags()
                     _, new_tags = await llm_generate_title_and_tags(
                         content=content,
@@ -867,37 +889,53 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                     if new_tags:
                         meta["tags"] = new_tags
                         result_item["new_tags"] = new_tags
+                        llm_state["tags_hash"] = content_hash
                         modified = True
 
             # 3. Clean text re-chunking
             if req.job_type in ("clean_text", "all") and os.path.exists(chunks_path):
-                with open(chunks_path, "r", encoding="utf-8") as cf:
-                    chunks = json.load(cf)
-                chunks_modified = False
-                for c in chunks:
-                    raw_block = c.get("text", "")
-                    if raw_block:
-                        cleaned = await llm_clean_text(
-                            text=raw_block,
-                            llm_base_url=llm_base,
-                            llm_api_key=llm_key,
-                            llm_model=llm_model
-                        )
-                        if cleaned != c.get("speech_text"):
-                            c["speech_text"] = cleaned
-                            chunks_modified = True
-                if chunks_modified:
-                    with open(chunks_path, "w", encoding="utf-8") as cf:
-                        json.dump(chunks, cf, indent=2)
-                    modified = True
-                    result_item["speech_text_updated"] = True
+                should_run_clean = req.overwrite or (llm_state.get("speech_hash") != content_hash)
+                if should_run_clean:
+                    with open(chunks_path, "r", encoding="utf-8") as cf:
+                        chunks = json.load(cf)
+                    chunks_modified = False
+                    for c in chunks:
+                        raw_block = c.get("text", "")
+                        if raw_block:
+                            block_hash = hashlib.sha256(raw_block.encode("utf-8")).hexdigest()
+                            # If not overwrite and block was already cleaned with matching hash, skip LLM call
+                            if not req.overwrite and c.get("speech_cleaned") and c.get("raw_hash") == block_hash:
+                                continue
+
+                            cleaned = await llm_clean_text(
+                                text=raw_block,
+                                llm_base_url=llm_base,
+                                llm_api_key=llm_key,
+                                llm_model=llm_model
+                            )
+                            if cleaned != c.get("speech_text") or not c.get("speech_cleaned"):
+                                c["speech_text"] = cleaned
+                                c["speech_cleaned"] = True
+                                c["raw_hash"] = block_hash
+                                chunks_modified = True
+
+                    if chunks_modified:
+                        with open(chunks_path, "w", encoding="utf-8") as cf:
+                            json.dump(chunks, cf, indent=2)
+                        modified = True
+                        result_item["speech_text_updated"] = True
+                    llm_state["speech_hash"] = content_hash
 
             if modified:
+                llm_state["last_processed_at"] = datetime.now(timezone.utc).isoformat()
+                meta["llm_state"] = llm_state
                 meta["updated_at"] = datetime.now(timezone.utc).isoformat()
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
                 processed_count += 1
                 results.append(result_item)
+            else:
+                skipped_count += 1
 
         except Exception as err:
             results.append({"id": doc_id, "error": str(err)})
@@ -906,6 +944,7 @@ async def run_batch_llm_job(req: BatchLlmRequest):
         "status": "completed",
         "job_type": req.job_type,
         "processed_count": processed_count,
+        "skipped_count": skipped_count,
         "total_evaluated": len(all_docs),
         "results": results
     }
