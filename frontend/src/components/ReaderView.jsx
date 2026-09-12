@@ -30,6 +30,7 @@ export default function ReaderView({
   onSelectBlock,
   settings = { theme: 'dark', fontSize: 18, lineHeight: 1.7, fontFamily: 'serif' },
   onUpdateSettings,
+  onOpenDisplaySettings,
 }) {
   const t = getTheme(settings.theme);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -405,19 +406,17 @@ export default function ReaderView({
 
         {/* Header Right Actions */}
         <div className="flex items-center gap-2">
-          {tocItems.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setIsTocOpen((prev) => !prev)}
-              className={`p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer ${
-                isTocOpen ? 'bg-indigo-600/20 text-indigo-500 dark:text-indigo-300' : ''
-              }`}
-              title="Table of Contents (Chapters)"
-            >
-              <List className="w-4 h-4 text-indigo-400" />
-              <span className="hidden sm:inline">Chapters ({tocItems.length})</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsTocOpen((prev) => !prev)}
+            className={`p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer ${
+              isTocOpen ? 'bg-indigo-600/20 text-indigo-500 dark:text-indigo-300' : ''
+            }`}
+            title="Table of Contents (Chapters)"
+          >
+            <List className="w-4 h-4 text-indigo-500" />
+            <span className="hidden sm:inline">Chapters{tocItems.length > 0 ? ` (${tocItems.length})` : ''}</span>
+          </button>
 
           {!showSearch && (
             <button
@@ -445,8 +444,8 @@ export default function ReaderView({
           )}
 
           <button
-            onClick={() => setIsDrawerOpen(true)}
-            className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10"
+            onClick={onOpenDisplaySettings || (() => setIsDrawerOpen(true))}
+            className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer"
             title="Display Options (Aa)"
           >
             <Type className="w-4 h-4 text-indigo-400" />
@@ -661,40 +660,50 @@ export default function ReaderView({
                 </button>
               </div>
 
-              <div className="space-y-1 overflow-y-auto max-h-[calc(100vh-160px)] pr-1">
-                {tocItems.map((item, idx) => {
-                  const nextItem = tocItems[idx + 1];
-                  const isCurrentChapter = activeBlockId !== null && 
-                    activeBlockId >= item.blockId && 
-                    (!nextItem || activeBlockId < nextItem.blockId);
+              {tocItems.length === 0 ? (
+                <div className={`p-8 text-center text-xs ${t.cardMeta}`}>
+                  <List className="w-8 h-8 mx-auto mb-2.5 opacity-40 text-indigo-500" />
+                  <p className={`font-semibold mb-1 text-sm ${t.cardTitle}`}>No Chapters Found</p>
+                  <p className="text-xs leading-relaxed max-w-xs mx-auto">
+                    Use Markdown headings like <code className="px-1 py-0.5 rounded bg-black/10 dark:bg-white/10"># Chapter</code> or <code className="px-1 py-0.5 rounded bg-black/10 dark:bg-white/10">## Section</code> in your notes to automatically generate clickable chapter markers.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1 overflow-y-auto max-h-[calc(100vh-160px)] pr-1">
+                  {tocItems.map((item, idx) => {
+                    const nextItem = tocItems[idx + 1];
+                    const isCurrentChapter = activeBlockId !== null && 
+                      activeBlockId >= item.blockId && 
+                      (!nextItem || activeBlockId < nextItem.blockId);
 
-                  return (
-                    <button
-                      key={`${item.blockId}-${idx}`}
-                      type="button"
-                      onClick={() => {
-                        scrollToBlock(item.blockId);
-                        setIsTocOpen(false);
-                      }}
-                      className={`w-full text-left py-2 px-2.5 rounded-lg transition cursor-pointer flex items-center justify-between gap-2 border ${
-                        isCurrentChapter
-                          ? 'bg-indigo-600/20 border-indigo-500 font-semibold text-indigo-500 dark:text-indigo-300'
-                          : `border-transparent ${t.playerPopoverItem}`
-                      }`}
-                      style={{
-                        paddingLeft: `${Math.max(0.6, (item.level - 1) * 0.9 + 0.6)}rem`,
-                      }}
-                    >
-                      <span className={`truncate text-xs ${item.level === 1 ? 'font-bold' : item.level === 2 ? 'font-semibold' : 'font-normal'}`}>
-                        {item.title}
-                      </span>
-                      <span className={`text-[10px] font-mono shrink-0 px-1.5 py-0.2 rounded ${t.badge}`}>
-                        B{item.blockId + 1}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                    return (
+                      <button
+                        key={`${item.blockId}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          scrollToBlock(item.blockId);
+                          setIsTocOpen(false);
+                        }}
+                        className={`w-full text-left py-2 px-2.5 rounded-lg transition cursor-pointer flex items-center justify-between gap-2 border ${
+                          isCurrentChapter
+                            ? 'bg-indigo-600/20 border-indigo-500 font-semibold text-indigo-500 dark:text-indigo-300'
+                            : `border-transparent ${t.playerPopoverItem}`
+                        }`}
+                        style={{
+                          paddingLeft: `${Math.max(0.6, (item.level - 1) * 0.9 + 0.6)}rem`,
+                        }}
+                      >
+                        <span className={`truncate text-xs ${item.level === 1 ? 'font-bold' : item.level === 2 ? 'font-semibold' : 'font-normal'}`}>
+                          {item.title}
+                        </span>
+                        <span className={`text-[10px] font-mono shrink-0 px-1.5 py-0.2 rounded ${t.badge}`}>
+                          B{item.blockId + 1}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className={`pt-4 border-t ${t.divider} text-center text-xs ${t.cardMeta}`}>

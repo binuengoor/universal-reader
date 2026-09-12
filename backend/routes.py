@@ -528,13 +528,10 @@ async def _synthesize_or_get_cached_audio(
     glossary = settings.get("glossary", [])
 
     block_text = target_block.get("text", "").strip()
-    speech_text = target_block.get("speech_text")
-    if not speech_text or not speech_text.strip():
-        speech_text = clean_text_for_speech(block_text, glossary=glossary)
-    else:
-        speech_text = apply_glossary(speech_text, glossary=glossary)
+    raw_source = target_block.get("speech_text") or block_text
+    speech_text = clean_text_for_speech(raw_source, glossary=glossary)
     if not speech_text.strip():
-        speech_text = block_text
+        speech_text = clean_text_for_speech(block_text, glossary=glossary) or block_text
 
     if not speech_text.strip():
         raise HTTPException(status_code=400, detail="Block contains no readable text")
@@ -669,13 +666,10 @@ async def export_full_audio(
     for chunk in chunks:
         block_id = chunk["id"]
         block_text = chunk.get("text", "").strip()
-        speech_text = chunk.get("speech_text")
-        if not speech_text or not speech_text.strip():
-            speech_text = clean_text_for_speech(block_text, glossary=glossary)
-        else:
-            speech_text = apply_glossary(speech_text, glossary=glossary)
+        raw_source = chunk.get("speech_text") or block_text
+        speech_text = clean_text_for_speech(raw_source, glossary=glossary)
         if not speech_text.strip():
-            speech_text = block_text
+            speech_text = clean_text_for_speech(block_text, glossary=glossary) or block_text
 
         if not speech_text:
             continue

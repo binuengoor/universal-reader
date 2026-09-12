@@ -41,10 +41,13 @@ async def serve_spa(full_path: str):
     if full_path:
         candidate = os.path.join(frontend_dist, full_path)
         if os.path.isfile(candidate):
-            return FileResponse(candidate)
+            headers = {}
+            if full_path in ("sw.js", "manifest.json", "index.html"):
+                headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+            return FileResponse(candidate, headers=headers)
 
     index_file = os.path.join(frontend_dist, "index.html")
     if os.path.exists(index_file):
-        return FileResponse(index_file)
+        return FileResponse(index_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"message": "Universal Reader API running. Build frontend with 'npm run build' to serve UI."}
 

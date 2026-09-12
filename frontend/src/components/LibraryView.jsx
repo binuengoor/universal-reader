@@ -23,12 +23,13 @@ import {
   Star,
   Archive,
   Inbox,
-  HelpCircle
+  HelpCircle,
+  Type
 } from 'lucide-react';
 import TagInput from './TagInput';
 import { getTheme } from '../utils/theme';
 
-export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, initialShareData, onClearShareData, theme = 'dark' }) {
+export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, onOpenDisplaySettings, initialShareData, onClearShareData, theme = 'dark' }) {
   const t = getTheme(theme);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -483,6 +484,17 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 title="Keyboard Shortcuts (?)"
               >
                 <HelpCircle className="w-4 h-4" />
+              </button>
+            )}
+            {onOpenDisplaySettings && (
+              <button
+                type="button"
+                onClick={onOpenDisplaySettings}
+                className={`p-1.5 sm:p-2 rounded-lg transition border cursor-pointer flex items-center gap-1 ${t.btnSecondary}`}
+                title="Theme & Display Options (Aa)"
+              >
+                <Type className="w-4 h-4 text-indigo-500" />
+                <span className="font-serif font-bold text-xs leading-none hidden sm:inline">Aa</span>
               </button>
             )}
             {onOpenSettings && (

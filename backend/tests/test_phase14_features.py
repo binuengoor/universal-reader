@@ -24,3 +24,13 @@ def test_inter_block_pause_setting(client):
     res2 = client.get("/api/settings")
     assert res2.status_code == 200
     assert res2.json()["inter_block_pause_ms"] == 500
+
+
+def test_speech_cleanup_strips_all_hashes_and_horizontal_rules():
+    from backend.cleaner import clean_text_for_speech
+    raw = '--- ### The Three Fatal Flaws of Classical PARA in a Modern Vault #### Flaw 1: The "Area vs. Resource" Cognitive Tax'
+    cleaned = clean_text_for_speech(raw)
+    assert "#" not in cleaned
+    assert "---" not in cleaned
+    assert "The Three Fatal Flaws of Classical PARA in a Modern Vault Flaw 1" in cleaned
+

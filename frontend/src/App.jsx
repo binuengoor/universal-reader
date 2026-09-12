@@ -6,6 +6,7 @@ import MiniPlayer from './components/MiniPlayer';
 import DocumentEditor from './components/DocumentEditor';
 import SettingsModal from './components/SettingsModal';
 import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
+import DisplaySettingsDrawer from './components/DisplaySettingsDrawer';
 import { priorityAudioQueue } from './utils/priorityAudioQueue';
 import { getTheme } from './utils/theme';
 
@@ -14,6 +15,7 @@ export default function App() {
   const [editingDocId, setEditingDocId] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isDisplayDrawerOpen, setIsDisplayDrawerOpen] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0);
 
   // Web Share Target initial intake state
@@ -595,6 +597,7 @@ export default function App() {
             setEditingDocId(null);
             handleOpenDocument(docId);
           }}
+          onOpenDisplaySettings={() => setIsDisplayDrawerOpen(true)}
           theme={readerSettings.theme}
         />
       ) : selectedDocId ? (
@@ -624,6 +627,7 @@ export default function App() {
             }}
             settings={readerSettings}
             onUpdateSettings={handleUpdateSettings}
+            onOpenDisplaySettings={() => setIsDisplayDrawerOpen(true)}
           />
 
           {/* Sticky Bottom Audio Player: Always mounted & ready on document open */}
@@ -659,6 +663,7 @@ export default function App() {
           onEditDocument={(id) => setEditingDocId(id)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onOpenDisplaySettings={() => setIsDisplayDrawerOpen(true)}
           initialShareData={shareData}
           onClearShareData={() => setShareData(null)}
           theme={readerSettings.theme}
@@ -709,6 +714,14 @@ export default function App() {
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
         theme={readerSettings.theme}
+      />
+
+      {/* Global Display & Theme Settings Drawer */}
+      <DisplaySettingsDrawer
+        isOpen={isDisplayDrawerOpen}
+        onClose={() => setIsDisplayDrawerOpen(false)}
+        settings={readerSettings}
+        onUpdateSettings={handleUpdateSettings}
       />
     </div>
   );

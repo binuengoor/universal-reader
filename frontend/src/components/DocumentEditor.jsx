@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2, Tag, X, Plus, Sparkles } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2, Tag, X, Plus, Sparkles, Type } from 'lucide-react';
 import TagInput from './TagInput';
 import { getTheme } from '../utils/theme';
 
-export default function DocumentEditor({ docId, onBack, onSaved, theme = 'dark' }) {
+export default function DocumentEditor({ docId, onBack, onSaved, onOpenDisplaySettings, theme = 'dark' }) {
   const t = getTheme(theme);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -176,6 +176,18 @@ export default function DocumentEditor({ docId, onBack, onSaved, theme = 'dark' 
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenDisplaySettings && (
+            <button
+              type="button"
+              onClick={onOpenDisplaySettings}
+              className={`p-1.5 sm:p-2 rounded-lg transition border cursor-pointer flex items-center gap-1 ${t.btnSecondary}`}
+              title="Theme & Display Options (Aa)"
+            >
+              <Type className="w-4 h-4 text-indigo-500" />
+              <span className="font-serif font-bold text-xs leading-none hidden sm:inline">Aa</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleAiSuggest}

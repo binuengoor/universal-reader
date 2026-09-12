@@ -122,6 +122,12 @@ def clean_text_for_speech(text: str, glossary: Optional[List[Dict[str, str]]] = 
     s = HEADING_PATTERN.sub('', s)
     # Remove any inline heading markers that survived (e.g. ### mid-string after join)
     s = INLINE_HEADING_PATTERN.sub('', s)
+    # Absolute safety: strip any stray '#' characters so TTS never vocalizes "hash"
+    s = re.sub(r'#+', ' ', s)
+
+    # Remove horizontal rules (---, ***, ___)
+    s = re.sub(r'^\s*[-*_]{3,}\s*$', '', s, flags=re.MULTILINE)
+    s = re.sub(r'[-*_]{3,}', ' ', s)
 
     # Remove blockquote markers
     s = BLOCKQUOTE_PATTERN.sub('', s)
