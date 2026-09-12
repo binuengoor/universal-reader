@@ -86,6 +86,6 @@
 - [x] Write backend unit tests in backend/tests/test_phase10_features.py and verify all test suites pass.
 - [x] Implement Pronunciation Glossary editor and Batch Results feedback counters in frontend/src/components/SettingsModal.jsx.
 - [x] Implement Global Persistent Audio Player with floating mini-player bar across all views and sleep timer.
-- [ ] Implement Library Status Tabs (All/Inbox/Reading/Archived/Favorites), Quick Archive/Star toggles, and Full-Text search in frontend/src/components/LibraryView.jsx.
+- [x] Implement Library Status Tabs (All/Inbox/Reading/Archived/Favorites), Quick Archive/Star toggles, and Full-Text search in frontend/src/components/LibraryView.jsx.
 - [ ] Implement Keyboard Shortcuts HUD (?) and PWA Web Share Target handling in frontend/src/App.jsx and manifest.json.
 - [ ] Build frontend, verify end-to-end, commit, push to GitHub, monitor CI, and deploy to oracle-xmillionmax:3003.

@@ -19,7 +19,10 @@ import {
   ArrowUpDown,
   Tag,
   Headphones,
-  Sparkles
+  Sparkles,
+  Star,
+  Archive,
+  Inbox
 } from 'lucide-react';
 import TagInput from './TagInput';
 
@@ -31,7 +34,60 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   // Search, Tags & Sorting
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('all');
+  const [statusTab, setStatusTab] = useState('all'); // 'all' | 'inbox' | 'reading' | 'archived' | 'favorites'
   const [sortBy, setSortBy] = useState('newest'); // 'newest' | 'oldest' | 'title' | 'length'
+
+  const counts = useMemo(() => {
+    let inbox = 0;
+    let reading = 0;
+    let archived = 0;
+    let favorites = 0;
+    documents.forEach((d) => {
+      const s = d.status || 'inbox';
+      if (s === 'inbox') inbox++;
+      else if (s === 'reading') reading++;
+      else if (s === 'archived') archived++;
+      if (d.favorite) favorites++;
+    });
+    return { all: documents.length, inbox, reading, archived, favorites };
+  }, [documents]);
+
+  const handleToggleFavorite = async (docId, currentFavorite, e) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/documents/${docId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite: !currentFavorite }),
+      });
+      if (res.ok) {
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === docId ? { ...d, favorite: !currentFavorite } : d))
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleToggleArchive = async (docId, currentStatus, e) => {
+    e.stopPropagation();
+    const newStatus = currentStatus === 'archived' ? 'inbox' : 'archived';
+    try {
+      const res = await fetch(`/api/documents/${docId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === docId ? { ...d, status: newStatus } : d))
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   // Bulk selection
   const [selectedDocIds, setSelectedDocIds] = useState(new Set());
@@ -99,6 +155,14 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   const filteredAndSortedDocuments = useMemo(() => {
     return documents
       .filter((doc) => {
+        // Status lifecycle / favorites filter
+        if (statusTab === 'favorites') {
+          if (!doc.favorite) return false;
+        } else if (statusTab !== 'all') {
+          const s = doc.status || 'inbox';
+          if (s !== statusTab) return false;
+        }
+
         // Tag filter
         if (selectedTag !== 'all') {
           if (!doc.tags || !doc.tags.includes(selectedTag)) {
@@ -127,7 +191,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         }
         return 0;
       });
-  }, [documents, selectedTag, searchQuery, sortBy]);
+  }, [documents, statusTab, selectedTag, searchQuery, sortBy]);
 
   // Bulk selection helpers
   const toggleSelectDoc = (id, e) => {
@@ -411,6 +475,52 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
       <main className="max-w-6xl mx-auto px-6 pt-6">
         {/* Search, Filter & Bulk Action Toolbar */}
         <div className="space-y-4 mb-6">
+          {/* Status Tabs (All, Inbox, Reading, Favorites, Archived) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-zinc-800/80 scrollbar-none">
+            {[
+              { id: 'all', label: 'All', count: counts.all },
+              { id: 'inbox', label: 'Inbox', count: counts.inbox, icon: Inbox },
+              { id: 'reading', label: 'Reading', count: counts.reading, icon: BookOpen },
+              { id: 'favorites', label: 'Starred', count: counts.favorites, icon: Star },
+              { id: 'archived', label: 'Archived', count: counts.archived, icon: Archive },
+            ].map((tab) => {
+              const isActive = statusTab === tab.id;
+              const IconComponent = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStatusTab(tab.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition cursor-pointer flex-shrink-0 border ${
+                    isActive
+                      ? 'bg-zinc-800 text-white border-zinc-700 shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200 border-transparent hover:bg-zinc-900/60'
+                  }`}
+                >
+                  {IconComponent && (
+                    <IconComponent
+                      className={`w-3.5 h-3.5 ${
+                        tab.id === 'favorites' && isActive
+                          ? 'text-amber-400 fill-amber-400'
+                          : tab.id === 'favorites'
+                          ? 'text-amber-400'
+                          : 'text-zinc-400'
+                      }`}
+                    />
+                  )}
+                  <span>{tab.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      isActive ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800/60 text-zinc-500'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative flex-1 min-w-[240px] max-w-md">
@@ -620,30 +730,70 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                         >
                           {doc.source_type || 'text'}
                         </span>
+                        {doc.status === 'reading' && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            Reading
+                          </span>
+                        )}
+                        {doc.status === 'archived' && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                            Archived
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                        {onEditDocument && (
-                          <button
-                            type="button"
-                            title="Edit document"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditDocument(doc.id);
-                            }}
-                            className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition cursor-pointer"
-                          >
-                            <FileEdit className="w-4 h-4" />
-                          </button>
-                        )}
+                      <div className="flex items-center gap-1">
+                        {/* Quick Favorite/Star Toggle */}
                         <button
                           type="button"
-                          title="Delete document"
-                          onClick={(e) => handleDelete(doc.id, doc.title, e)}
-                          className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition cursor-pointer"
+                          title={doc.favorite ? 'Unstar document' : 'Star document'}
+                          onClick={(e) => handleToggleFavorite(doc.id, !!doc.favorite, e)}
+                          className={`p-1.5 rounded-lg transition cursor-pointer ${
+                            doc.favorite
+                              ? 'text-amber-400 hover:text-amber-300 hover:bg-amber-400/10'
+                              : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 opacity-0 group-hover:opacity-100'
+                          }`}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Star className={`w-4 h-4 ${doc.favorite ? 'fill-amber-400' : ''}`} />
                         </button>
+
+                        {/* Quick Archive Toggle */}
+                        <button
+                          type="button"
+                          title={doc.status === 'archived' ? 'Unarchive (move to inbox)' : 'Archive document'}
+                          onClick={(e) => handleToggleArchive(doc.id, doc.status, e)}
+                          className={`p-1.5 rounded-lg transition cursor-pointer ${
+                            doc.status === 'archived'
+                              ? 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10'
+                              : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          <Archive className="w-4 h-4" />
+                        </button>
+
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                          {onEditDocument && (
+                            <button
+                              type="button"
+                              title="Edit document"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditDocument(doc.id);
+                              }}
+                              className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition cursor-pointer"
+                            >
+                              <FileEdit className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            title="Delete document"
+                            onClick={(e) => handleDelete(doc.id, doc.title, e)}
+                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
