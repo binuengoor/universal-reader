@@ -88,4 +88,4 @@
 - [x] Implement Global Persistent Audio Player with floating mini-player bar across all views and sleep timer.
 - [x] Implement Library Status Tabs (All/Inbox/Reading/Archived/Favorites), Quick Archive/Star toggles, and Full-Text search in frontend/src/components/LibraryView.jsx.
 - [x] Implement Keyboard Shortcuts HUD (?) and PWA Web Share Target handling in frontend/src/App.jsx and manifest.json.
-- [ ] Build frontend, verify end-to-end, commit, push to GitHub, monitor CI, and deploy to oracle-xmillionmax:3003.
+- [x] Build frontend, verify end-to-end, commit, push to GitHub, monitor CI, and deploy to oracle-xmillionmax:3003.
