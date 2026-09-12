@@ -34,8 +34,10 @@ URL_PATTERN = re.compile(r'https?://[^\s)\]]+')
 # 5. Citation brackets e.g. [1], [2, 3], [citation needed], [source]
 CITATION_PATTERN = re.compile(r'\[(?:\d+(?:,\s*\d+)*|[a-zA-Z\s]{1,20})\]')
 
-# 6. Markdown headings markers at start of line
+# 6. Markdown heading markers: start-of-line (multiline) + any inline ## after joining
 HEADING_PATTERN = re.compile(r'^\s*#{1,6}\s*', flags=re.MULTILINE)
+# Catches any residual #{1,6} mid-string (e.g. after chunker joins lines with " ".join())
+INLINE_HEADING_PATTERN = re.compile(r'#{1,6}\s*')
 
 # 7. Markdown blockquotes
 BLOCKQUOTE_PATTERN = re.compile(r'^\s*>\s*', flags=re.MULTILINE)
@@ -116,8 +118,10 @@ def clean_text_for_speech(text: str, glossary: Optional[List[Dict[str, str]]] = 
     # Remove citations [1], [citation needed]
     s = CITATION_PATTERN.sub('', s)
 
-    # Remove heading markers
+    # Remove heading markers (start-of-line)
     s = HEADING_PATTERN.sub('', s)
+    # Remove any inline heading markers that survived (e.g. ### mid-string after join)
+    s = INLINE_HEADING_PATTERN.sub('', s)
 
     # Remove blockquote markers
     s = BLOCKQUOTE_PATTERN.sub('', s)

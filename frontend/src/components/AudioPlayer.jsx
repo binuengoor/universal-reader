@@ -44,6 +44,7 @@ export default function AudioPlayer({
   onSetSleepTimer,
   sleepTimerRemaining = null,
   settingsVersion = 0,
+  theme = 'dark',
 }) {
   const [showModelModal, setShowModelModal] = useState(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
@@ -257,10 +258,16 @@ export default function AudioPlayer({
     ? Math.round((fullTask.completed / fullTask.total) * 100) 
     : 0;
 
+  const playerShell = theme === 'light'
+    ? 'bg-white/95 sm:bg-white/90 hover:bg-white/95 backdrop-blur-xl border border-zinc-200/90 text-zinc-900'
+    : theme === 'sepia'
+      ? 'bg-[#f5e6c8]/95 sm:bg-[#f5e6c8]/90 hover:bg-[#f5e6c8]/95 backdrop-blur-xl border border-[#d4b896]/90 text-[#433422]'
+      : 'bg-zinc-950/95 sm:bg-zinc-950/90 hover:bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 text-zinc-100';
+
   return (
     <>
       <div className="fixed bottom-2 sm:bottom-5 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] max-w-4xl z-40 transition-all duration-200 pb-safe">
-        <div className="bg-zinc-950/95 sm:bg-zinc-950/90 hover:bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 rounded-2xl p-2.5 sm:p-4 shadow-2xl text-zinc-100 flex flex-col gap-2 sm:gap-2.5">
+        <div className={`${playerShell} rounded-2xl p-2.5 sm:p-4 shadow-2xl flex flex-col gap-2 sm:gap-2.5`}>
           {/* Top Progress / Background Generation Banner */}
           {isThisDocGenerating && (
             <div className="flex items-center justify-between text-[11px] bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-indigo-300">
@@ -485,7 +492,11 @@ export default function AudioPlayer({
       {/* Model & Voice Selection Modal */}
       {showModelModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 text-zinc-100 max-h-[90vh] flex flex-col">
+          <div className={`${
+            theme === 'light' ? 'bg-white border-zinc-200 text-zinc-900' :
+            theme === 'sepia' ? 'bg-[#f5e6c8] border-[#d4b896] text-[#433422]' :
+            'bg-zinc-900 border-zinc-800 text-zinc-100'
+          } border rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col`}>
             <button
               type="button"
               onClick={() => setShowModelModal(false)}

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import TagInput from './TagInput';
 
-export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, initialShareData, onClearShareData }) {
+export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, initialShareData, onClearShareData, theme = 'dark' }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -429,10 +429,21 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     }
   };
 
+  const libBg = theme === 'light'
+    ? 'bg-white text-zinc-900'
+    : theme === 'sepia'
+      ? 'bg-[#f5e6c8] text-[#433422]'
+      : 'bg-zinc-950 text-zinc-100';
+  const libHeader = theme === 'light'
+    ? 'border-b border-zinc-200 bg-white/80 backdrop-blur'
+    : theme === 'sepia'
+      ? 'border-b border-[#d4b896] bg-[#f5e6c8]/80 backdrop-blur'
+      : 'border-b border-zinc-800 bg-zinc-900/50 backdrop-blur';
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-20">
+    <div className={`min-h-screen ${libBg} pb-20`}>
       {/* Top Navigation */}
-      <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4">
+      <header className={`${libHeader} sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4`}>
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">

@@ -451,8 +451,14 @@ export default function App() {
     setCurrentAudioSrc('');
   };
 
+  const appThemeClass = readerSettings.theme === 'light'
+    ? 'bg-white text-zinc-900'
+    : readerSettings.theme === 'sepia'
+      ? 'bg-[#f5e6c8] text-[#433422]'
+      : 'bg-zinc-950 text-zinc-100';
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className={`min-h-screen ${appThemeClass}`}>
       {/* Hidden audio element */}
       <audio
         ref={audioRef}
@@ -547,6 +553,7 @@ export default function App() {
             currentTime={currentTime}
             duration={duration}
             settingsVersion={settingsVersion}
+            theme={readerSettings.theme}
           />
         </>
       ) : (
@@ -557,6 +564,7 @@ export default function App() {
           onOpenShortcuts={() => setIsShortcutsOpen(true)}
           initialShareData={shareData}
           onClearShareData={() => setShareData(null)}
+          theme={readerSettings.theme}
         />
       )}
 
@@ -576,6 +584,7 @@ export default function App() {
           onSpeedChange={handleSpeedChange}
           onOpenReader={() => setSelectedDocId(audioDoc.id)}
           onDismiss={handleDismissMiniPlayer}
+          theme={readerSettings.theme}
         />
       )}
 

@@ -24,7 +24,8 @@ export default function MiniPlayer({
   onNextBlock,
   onSpeedChange,
   onOpenReader,
-  onDismiss
+  onDismiss,
+  theme = 'dark',
 }) {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -36,8 +37,14 @@ export default function MiniPlayer({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const miniShell = theme === 'light'
+    ? 'bg-white/95 backdrop-blur-md border border-zinc-200 text-zinc-900'
+    : theme === 'sepia'
+      ? 'bg-[#f5e6c8]/95 backdrop-blur-md border border-[#d4b896] text-[#433422]'
+      : 'bg-zinc-900/95 backdrop-blur-md border border-zinc-800 text-zinc-100';
+
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[calc(100%-2rem)] bg-zinc-900/95 backdrop-blur-md border border-zinc-800 shadow-2xl rounded-2xl p-3 text-zinc-100 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-3 duration-200">
+    <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[calc(100%-2rem)] ${miniShell} shadow-2xl rounded-2xl p-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-3 duration-200`}>
       {/* Left: Document info */}
       <div 
         onClick={onOpenReader}
