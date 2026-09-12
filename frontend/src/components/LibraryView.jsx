@@ -22,11 +22,12 @@ import {
   Sparkles,
   Star,
   Archive,
-  Inbox
+  Inbox,
+  HelpCircle
 } from 'lucide-react';
 import TagInput from './TagInput';
 
-export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings }) {
+export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, initialShareData, onClearShareData }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -104,6 +105,22 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   const [urlInput, setUrlInput] = useState('');
   const [scratchContent, setScratchContent] = useState('');
   const [modalTags, setModalTags] = useState([]);
+
+  // Handle incoming web share data
+  useEffect(() => {
+    if (initialShareData) {
+      if (initialShareData.url) {
+        setUrlInput(initialShareData.url);
+        if (initialShareData.title) setCustomTitle(initialShareData.title);
+        setActiveModal('url');
+      } else if (initialShareData.text) {
+        setScratchContent(initialShareData.text);
+        if (initialShareData.title) setCustomTitle(initialShareData.title);
+        setActiveModal('scratch');
+      }
+      if (onClearShareData) onClearShareData();
+    }
+  }, [initialShareData, onClearShareData]);
 
   const fetchDocuments = async (showLoading = true) => {
     try {
@@ -456,11 +473,21 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               <span className="hidden sm:inline">New Text</span>
               <span className="inline sm:hidden">New</span>
             </button>
+            {onOpenShortcuts && (
+              <button
+                type="button"
+                onClick={onOpenShortcuts}
+                className="p-1.5 sm:p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-0.5 cursor-pointer"
+                title="Keyboard Shortcuts (?)"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            )}
             {onOpenSettings && (
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="p-1.5 sm:p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-0.5 cursor-pointer"
+                className="p-1.5 sm:p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 cursor-pointer"
                 title="TTS & Service Settings"
               >
                 <Settings className="w-4 h-4" />

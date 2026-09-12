@@ -1,16 +1,36 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import LibraryView from './components/LibraryView';
 import ReaderView from './components/ReaderView';
 import AudioPlayer from './components/AudioPlayer';
 import MiniPlayer from './components/MiniPlayer';
 import DocumentEditor from './components/DocumentEditor';
 import SettingsModal from './components/SettingsModal';
+import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
 import { priorityAudioQueue } from './utils/priorityAudioQueue';
 
 export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [editingDocId, setEditingDocId] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+  // Web Share Target initial intake state
+  const [shareData, setShareData] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get('url');
+      const text = params.get('text');
+      const title = params.get('title');
+      if (url || text || title) {
+        // Clean URL query params from browser address bar
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return { url, text, title };
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
   
   // Persistent active audio session state
   const [audioDoc, setAudioDoc] = useState(null); // { id: string, title: string, totalBlocks: number }
@@ -277,6 +297,94 @@ export default function App() {
     }
   };
 
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger shortcuts if user is typing in an input, textarea, or contentEditable
+      const tag = e.target.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) {
+        return;
+      }
+
+      // Help Modal toggle
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        setIsShortcutsOpen((prev) => !prev);
+        return;
+      }
+
+      // Escape closes shortcuts or settings modal, or returns to library
+      if (e.key === 'Escape') {
+        if (isShortcutsOpen) {
+          setIsShortcutsOpen(false);
+          return;
+        }
+        if (isSettingsOpen) {
+          setIsSettingsOpen(false);
+          return;
+        }
+        if (selectedDocId && !editingDocId) {
+          setSelectedDocId(null);
+          return;
+        }
+      }
+
+      // Play / Pause toggle
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleTogglePlay();
+        return;
+      }
+
+      // Block navigation: J (Next), K (Prev)
+      if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        handleNextBlock();
+        return;
+      }
+      if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        handlePrevBlock();
+        return;
+      }
+
+      // Playback speed: '[' (slower), ']' (faster), '0' (reset)
+      if (e.key === '[') {
+        e.preventDefault();
+        const nextSpeed = Math.max(0.5, Math.round((playbackSpeed - 0.1) * 10) / 10);
+        handleSpeedChange(nextSpeed);
+        return;
+      }
+      if (e.key === ']') {
+        e.preventDefault();
+        const nextSpeed = Math.min(3.0, Math.round((playbackSpeed + 0.1) * 10) / 10);
+        handleSpeedChange(nextSpeed);
+        return;
+      }
+      if (e.key === '0') {
+        e.preventDefault();
+        handleSpeedChange(1.0);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isShortcutsOpen,
+    isSettingsOpen,
+    selectedDocId,
+    editingDocId,
+    isPlaying,
+    currentAudioSrc,
+    activeBlockId,
+    totalBlocks,
+    playbackSpeed,
+    selectedVoice,
+    selectedModel,
+    audioDoc?.id,
+  ]);
+
   const handleUpdateSettings = (newSettings) => {
     setReaderSettings(newSettings);
     try {
@@ -444,6 +552,9 @@ export default function App() {
           onSelectDocument={handleOpenDocument}
           onEditDocument={(id) => setEditingDocId(id)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          initialShareData={shareData}
+          onClearShareData={() => setShareData(null)}
         />
       )}
 
@@ -478,6 +589,12 @@ export default function App() {
             setSelectedVoice(settings.tts_default_voice);
           }
         }}
+      />
+
+      {/* Keyboard Shortcuts HUD Modal */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
       />
     </div>
   );

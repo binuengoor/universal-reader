@@ -14,5 +14,14 @@
   "theme_color": "#6366f1",
   "display": "standalone",
   "orientation": "portrait",
-  "scope": "/"
+  "scope": "/",
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }
