@@ -35,7 +35,15 @@ async def serve_spa(full_path: str):
     # Don't intercept API routes
     if full_path.startswith("api"):
         return {"error": "Not found"}
+    
+    # Check if a specific static file exists in frontend_dist (e.g. manifest.json, sw.js, favicon.svg)
+    if full_path:
+        candidate = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(candidate):
+            return FileResponse(candidate)
+
     index_file = os.path.join(frontend_dist, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {"message": "Universal Reader API running. Build frontend with 'npm run build' to serve UI."}
+
