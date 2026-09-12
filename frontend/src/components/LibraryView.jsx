@@ -348,49 +348,52 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-20">
       {/* Top Navigation */}
-      <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur sticky top-0 z-30 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">
-              <BookOpen className="w-6 h-6" />
+      <header className="border-b border-zinc-800 bg-zinc-900/50 backdrop-blur sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4">
+        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-1.5 sm:p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">
+              <BookOpen className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">Universal Reader</h1>
-              <p className="text-xs text-zinc-400">Local TTS & Semantic Reader</p>
+              <h1 className="text-base sm:text-xl font-bold tracking-tight">Universal Reader</h1>
+              <p className="text-[10px] sm:text-xs text-zinc-400">Local TTS & Semantic Reader</p>
             </div>
           </div>
 
           {/* Quick Intake Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => setActiveModal('upload')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
             >
-              <Upload className="w-4 h-4 text-zinc-300" />
-              Upload File
+              <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-zinc-300" />
+              <span className="hidden sm:inline">Upload File</span>
+              <span className="inline sm:hidden">Upload</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveModal('url')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
+              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm font-medium rounded-lg transition border border-zinc-700 cursor-pointer"
             >
-              <LinkIcon className="w-4 h-4 text-purple-400" />
-              Ingest URL
+              <LinkIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
+              <span className="hidden sm:inline">Ingest URL</span>
+              <span className="inline sm:hidden">URL</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveModal('scratch')}
-              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition shadow-sm cursor-pointer"
+              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-medium rounded-lg transition shadow-sm cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              New Text
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">New Text</span>
+              <span className="inline sm:hidden">New</span>
             </button>
             {onOpenSettings && (
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-1 cursor-pointer"
+                className="p-1.5 sm:p-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition border border-zinc-700 ml-0.5 cursor-pointer"
                 title="TTS & Service Settings"
               >
                 <Settings className="w-4 h-4" />
@@ -399,6 +402,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
           </div>
         </div>
       </header>
+
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-6 pt-6">

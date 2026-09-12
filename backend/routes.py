@@ -12,9 +12,11 @@ from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
 from .tts import tts_client, get_audio_filename, UniversalTTSClient
 from .config import load_settings, save_settings
+from .cleaner import clean_text_for_speech, llm_clean_text
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
+
 
 @models_router.get("")
 async def get_models(search: Optional[str] = None, q: Optional[str] = None):
@@ -122,15 +124,22 @@ class SettingsPayload(BaseModel):
     default_voice: Optional[str] = None
     base_url: Optional[str] = None
     api_key: Optional[str] = None
+    scoped_voices: Optional[List[str]] = None
+    scoped_voices_enabled: Optional[bool] = None
+    llm_base_url: Optional[str] = None
+    llm_api_key: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_prompt: Optional[str] = None
+    llm_clean_enabled: Optional[bool] = None
 
 @settings_router.get("")
 async def get_app_settings():
-    """Get current TTS settings."""
+    """Get current TTS and LLM settings."""
     return load_settings()
 
 @settings_router.post("")
 async def update_app_settings(req: SettingsPayload):
-    """Save updated TTS configuration settings."""
+    """Save updated TTS and LLM configuration settings."""
     data = req.model_dump(exclude_unset=True)
     if "base_url" in data and "tts_base_url" not in data:
         data["tts_base_url"] = data["base_url"]
@@ -164,6 +173,41 @@ async def test_upstream_tts(req: SettingsPayload):
         }
     except Exception as e:
         return {"ok": False, "message": str(e)}
+
+@settings_router.post("/test-llm")
+async def test_upstream_llm(req: SettingsPayload):
+    """Test connection to OpenAI-compatible LLM endpoint."""
+    import httpx
+    current = load_settings()
+    base_url = (req.llm_base_url or current.get("llm_base_url", "")).rstrip("/")
+    if not base_url:
+        return {"ok": False, "message": "LLM Base URL is empty"}
+    api_key = req.llm_api_key if req.llm_api_key is not None else current.get("llm_api_key", "")
+    model = req.llm_model or current.get("llm_model", "gpt-4o-mini")
+
+    endpoint = f"{base_url}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                endpoint,
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "Reply with 'OK'."}],
+                    "max_tokens": 10
+                },
+                headers=headers
+            )
+            if resp.status_code == 200:
+                return {"ok": True, "message": f"Successfully connected to LLM endpoint with model '{model}'."}
+            else:
+                return {"ok": False, "message": f"LLM error HTTP {resp.status_code}: {resp.text[:200]}"}
+    except Exception as e:
+        return {"ok": False, "message": f"LLM connection error: {str(e)}"}
+
 
 class CreateDocRequest(BaseModel):
     title: Optional[str] = None
@@ -352,20 +396,26 @@ async def _synthesize_or_get_cached_audio(
         raise HTTPException(status_code=404, detail=f"Block {block_id} not found")
 
     block_text = target_block.get("text", "").strip()
-    if not block_text:
+    speech_text = target_block.get("speech_text")
+    if not speech_text or not speech_text.strip():
+        speech_text = clean_text_for_speech(block_text)
+    if not speech_text.strip():
+        speech_text = block_text
+
+    if not speech_text.strip():
         raise HTTPException(status_code=400, detail="Block contains no readable text")
 
     cache_dir = os.path.join(doc_dir, "audio_cache")
     os.makedirs(cache_dir, exist_ok=True)
 
-    filename = get_audio_filename(block_id, voice, model, speed, block_text)
+    filename = get_audio_filename(block_id, voice, model, speed, speech_text)
     file_path = os.path.join(cache_dir, filename)
 
     is_cache_hit = os.path.exists(file_path) and os.path.getsize(file_path) > 0
 
     if not is_cache_hit:
         audio_bytes = await tts_client.synthesize(
-            text=block_text,
+            text=speech_text,
             voice=voice,
             model=model,
             speed=speed,
@@ -373,6 +423,7 @@ async def _synthesize_or_get_cached_audio(
         )
         with open(file_path, "wb") as f:
             f.write(audio_bytes)
+
 
     return FileResponse(
         path=file_path,
@@ -481,15 +532,21 @@ async def export_full_audio(
     for chunk in chunks:
         block_id = chunk["id"]
         block_text = chunk.get("text", "").strip()
-        if not block_text:
+        speech_text = chunk.get("speech_text")
+        if not speech_text or not speech_text.strip():
+            speech_text = clean_text_for_speech(block_text)
+        if not speech_text.strip():
+            speech_text = block_text
+
+        if not speech_text:
             continue
 
-        filename = get_audio_filename(block_id, voice, model, speed, block_text)
+        filename = get_audio_filename(block_id, voice, model, speed, speech_text)
         file_path = os.path.join(cache_dir, filename)
 
         if not (os.path.exists(file_path) and os.path.getsize(file_path) > 0):
             audio_bytes = await tts_client.synthesize(
-                text=block_text,
+                text=speech_text,
                 voice=voice,
                 model=model,
                 speed=speed,
@@ -500,6 +557,7 @@ async def export_full_audio(
         else:
             with open(file_path, "rb") as f:
                 audio_bytes = f.read()
+
 
         combined_audio.extend(audio_bytes)
 

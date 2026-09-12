@@ -56,4 +56,17 @@
 - [x] Update `ReaderView.jsx` and `AudioPlayer.jsx` with "Generate All Audio" button, background progress pill, and "Download MP3" action.
 - [x] Verify functionality with automated tests, oxlint, build, and live Docker verification on port 3003.
 
+## Phase 8: Mobile Polish & PWA, Markdown Rendering, Text Cleanup Pipeline, & Scoped Models
+- [x] Implement text cleaner engine (`backend/cleaner.py`) with emoji/syntax regex filters and OpenAI-compatible LLM text cleaner.
+- [x] Update backend config (`backend/config.py`) and settings endpoints (`backend/routes.py`) for scoped voices and LLM settings.
+- [x] Update chunking engine (`backend/chunking.py`) and audio generation (`backend/routes.py`) to generate and utilize `speech_text`.
+- [x] Add backend unit tests for text cleaner, LLM integration, and scoped settings.
+- [x] Implement frontend markdown rendering in `ReaderView.jsx` and responsive mobile layout / gutter adjustments.
+- [x] Update `SettingsModal.jsx` with Scoped Voices selector, LLM configuration, and connection testing.
+- [x] Update `AudioPlayer.jsx` with mobile-first responsive layout, safe-area padding, and Scoped Voices filter toggle.
+- [x] Update `App.jsx` to load and synchronize default voice/model and settings dynamically on mount.
+- [x] Add PWA support: `manifest.json`, high-res icons, and Service Worker caching in `frontend/`.
+- [x] Run full test suite, linting, production build, and verify end-to-end.
+
+
 

@@ -14,9 +14,11 @@ import {
   Check,
   Globe2,
   Sparkles,
-  Download
+  Download,
+  Star
 } from 'lucide-react';
 import { priorityAudioQueue } from '../utils/priorityAudioQueue';
+
 
 export default function AudioPlayer({
   docId,
@@ -46,6 +48,11 @@ export default function AudioPlayer({
   const [selectedEngines, setSelectedEngines] = useState(['edge-tts', 'kokoro', 'piper', 'google-cloud']);
   const [selectedLanguage, setSelectedLanguage] = useState('all');
 
+  // Scoped Voices & Favorites
+  const [scopedVoices, setScopedVoices] = useState([]);
+  const [onlyShowFavorites, setOnlyShowFavorites] = useState(false);
+
+
   // Full note audio generation state
   const [queueStatus, setQueueStatus] = useState(() => priorityAudioQueue.getStatus());
   const [isExporting, setIsExporting] = useState(false);
@@ -61,25 +68,43 @@ export default function AudioPlayer({
 
   useEffect(() => {
     let ignore = false;
-    const fetchVoices = async () => {
+    const fetchVoicesAndSettings = async () => {
       try {
-        const res = await fetch('/api/voices');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!ignore && data.voices && data.voices.length > 0) {
-          const formatted = data.voices.map((v) => ({
-            id: v.id,
-            label: v.name || v.id,
-            engine: v.engine || 'edge-tts',
-            language: v.language || '',
-            gender: v.gender || '',
-          }));
-          setVoices(formatted);
+        const [voicesRes, settingsRes] = await Promise.all([
+          fetch('/api/voices'),
+          fetch('/api/settings')
+        ]);
 
-          // Dynamically pre-select all discovered engines
-          const fetchedEngines = Array.from(new Set(formatted.map((v) => v.engine).filter(Boolean)));
-          if (fetchedEngines.length > 0) {
-            setSelectedEngines(fetchedEngines);
+        if (settingsRes.ok) {
+          const sData = await settingsRes.json();
+          if (!ignore) {
+            const list = Array.isArray(sData.scoped_voices) ? sData.scoped_voices : [];
+            const enabled = Boolean(sData.scoped_voices_enabled);
+            setScopedVoices(list);
+            setScopedVoicesEnabled(enabled);
+            if (enabled && list.length > 0) {
+              setOnlyShowFavorites(true);
+            }
+          }
+        }
+
+        if (voicesRes.ok) {
+          const data = await voicesRes.json();
+          if (!ignore && data.voices && data.voices.length > 0) {
+            const formatted = data.voices.map((v) => ({
+              id: v.id,
+              label: v.name || v.id,
+              engine: v.engine || 'edge-tts',
+              language: v.language || '',
+              gender: v.gender || '',
+            }));
+            setVoices(formatted);
+
+            // Dynamically pre-select all discovered engines
+            const fetchedEngines = Array.from(new Set(formatted.map((v) => v.engine).filter(Boolean)));
+            if (fetchedEngines.length > 0) {
+              setSelectedEngines(fetchedEngines);
+            }
           }
         }
       } catch {
@@ -87,11 +112,12 @@ export default function AudioPlayer({
       }
     };
 
-    fetchVoices();
+    fetchVoicesAndSettings();
     return () => {
       ignore = true;
     };
   }, []);
+
 
   const availableEngines = useMemo(() => {
     const set = new Set(voices.map((v) => v.engine).filter(Boolean));
@@ -133,6 +159,9 @@ export default function AudioPlayer({
 
   const filteredVoices = useMemo(() => {
     return voices.filter((v) => {
+      if (onlyShowFavorites && scopedVoices.length > 0 && !scopedVoices.includes(v.id)) {
+        return false;
+      }
       if (selectedEngines.length > 0 && !selectedEngines.includes(v.engine)) {
         return false;
       }
@@ -149,7 +178,8 @@ export default function AudioPlayer({
       }
       return true;
     });
-  }, [voices, selectedEngines, selectedLanguage, voiceSearchQuery]);
+  }, [voices, selectedEngines, selectedLanguage, voiceSearchQuery, onlyShowFavorites, scopedVoices]);
+
 
   const currentVoiceObj = useMemo(() => {
     return voices.find((v) => v.id === selectedVoice);
@@ -220,27 +250,27 @@ export default function AudioPlayer({
 
   return (
     <>
-      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-4xl z-40 transition-all duration-200">
-        <div className="bg-zinc-950/90 hover:bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 rounded-2xl p-3 sm:p-4 shadow-2xl text-zinc-100 flex flex-col gap-2.5">
+      <div className="fixed bottom-2 sm:bottom-5 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] max-w-4xl z-40 transition-all duration-200 pb-safe">
+        <div className="bg-zinc-950/95 sm:bg-zinc-950/90 hover:bg-zinc-950/95 backdrop-blur-xl border border-zinc-800/90 rounded-2xl p-2.5 sm:p-4 shadow-2xl text-zinc-100 flex flex-col gap-2 sm:gap-2.5">
           {/* Top Progress / Background Generation Banner */}
           {isThisDocGenerating && (
             <div className="flex items-center justify-between text-[11px] bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-indigo-300">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
-                <span>
+              <div className="flex items-center gap-2 min-w-0">
+                <Loader2 className="w-3 h-3 animate-spin text-indigo-400 flex-shrink-0" />
+                <span className="truncate">
                   Generating full note audio: {fullTask.completed} / {fullTask.total} blocks ({fullPercent}%)
                 </span>
-                <span className="text-[10px] opacity-60">· Lower priority background task</span>
               </div>
               <button
                 type="button"
                 onClick={handleCancelFullAudio}
-                className="text-xs text-zinc-400 hover:text-red-400 transition cursor-pointer"
+                className="text-xs text-zinc-400 hover:text-red-400 transition cursor-pointer ml-2 flex-shrink-0"
               >
                 Cancel
               </button>
             </div>
           )}
+
 
           {/* Audio Track Progress Bar */}
           <div
@@ -416,7 +446,21 @@ export default function AudioPlayer({
                   <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
                     Filter by Engine
                   </span>
-                  <div className="flex items-center gap-2 text-[11px]">
+                  <div className="flex items-center gap-3 text-[11px]">
+                    {scopedVoices.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setOnlyShowFavorites((prev) => !prev)}
+                        className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition cursor-pointer font-medium ${
+                          onlyShowFavorites
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        <Star className={`w-3 h-3 ${onlyShowFavorites ? 'fill-amber-400 text-amber-400' : ''}`} />
+                        <span>Favorites ({scopedVoices.length})</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={toggleAllEngines}
@@ -426,6 +470,7 @@ export default function AudioPlayer({
                     </button>
                   </div>
                 </div>
+
 
                 <div className="flex flex-wrap items-center gap-2">
                   {availableEngines.map((engine) => {

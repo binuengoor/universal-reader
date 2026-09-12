@@ -3,3 +3,59 @@
 :root {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
+
+/* Safe area padding utilities for mobile */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* Markdown formatting inside reader blocks */
+.reader-markdown h1,
+.reader-markdown h2,
+.reader-markdown h3,
+.reader-markdown h4 {
+  font-weight: 700;
+  margin-top: 0.5em;
+  margin-bottom: 0.25em;
+  line-height: 1.3;
+}
+.reader-markdown h1 { font-size: 1.4em; }
+.reader-markdown h2 { font-size: 1.25em; }
+.reader-markdown h3 { font-size: 1.1em; }
+.reader-markdown p { margin-bottom: 0.5em; }
+.reader-markdown p:last-child { margin-bottom: 0; }
+.reader-markdown strong { font-weight: 700; }
+.reader-markdown em { font-style: italic; }
+.reader-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 0.15em 0.35em;
+  border-radius: 0.25rem;
+  background-color: rgba(125, 125, 125, 0.15);
+}
+.reader-markdown pre {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background-color: rgba(0, 0, 0, 0.2);
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.reader-markdown blockquote {
+  border-left: 3px solid rgba(99, 102, 241, 0.6);
+  padding-left: 0.75rem;
+  margin: 0.5em 0;
+  opacity: 0.9;
+  font-style: italic;
+}
+.reader-markdown ul { list-style-type: disc; padding-left: 1.25rem; margin: 0.5em 0; }
+.reader-markdown ol { list-style-type: decimal; padding-left: 1.25rem; margin: 0.5em 0; }
+.reader-markdown a {
+  color: #6366f1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+

@@ -12,6 +12,8 @@ import {
   Pause,
   FileEdit
 } from 'lucide-react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import DisplaySettingsDrawer from './DisplaySettingsDrawer';
 
 export default function ReaderView({
@@ -198,6 +200,23 @@ export default function ReaderView({
     );
   };
 
+  // Configure marked for secure, seamless in-chunk rendering
+  const renderMarkdownHtml = (rawText) => {
+    if (!rawText) return '';
+    try {
+      const parsed = marked.parse(rawText, {
+        gfm: true,
+        breaks: true,
+      });
+      return DOMPurify.sanitize(parsed, {
+        ADD_ATTR: ['target', 'rel'],
+      });
+    } catch {
+      return DOMPurify.sanitize(rawText);
+    }
+  };
+
+
   if (loading) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center gap-3 ${getThemeClasses()}`}>
@@ -362,7 +381,7 @@ export default function ReaderView({
       )}
 
       {/* Reader Content Column */}
-      <main className={`${settings.contentWidth || 'max-w-3xl'} mx-auto px-6 pt-10`}>
+      <main className={`${settings.contentWidth || 'max-w-3xl'} mx-auto px-3 sm:px-6 pt-6 sm:pt-10`}>
         <div className="space-y-4">
           {chunks?.map((chunk) => {
             const isActive = activeBlockId === chunk.id;
@@ -384,7 +403,7 @@ export default function ReaderView({
                       ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
                       : 'system-ui, -apple-system, sans-serif',
                 }}
-                className={`relative group rounded-xl p-4 transition-all duration-150 cursor-pointer border ${
+                className={`relative group rounded-xl p-3.5 sm:p-4 transition-all duration-150 cursor-pointer border ${
                   isCurrentSearchBlock
                     ? 'ring-2 ring-amber-400 bg-amber-500/10 border-amber-400'
                     : isActive
@@ -394,8 +413,8 @@ export default function ReaderView({
                     : getBlockHoverClasses()
                 }`}
               >
-                {/* Block index & click-to-play gutter */}
-                <div className="absolute -left-12 top-3 flex items-center justify-end w-10 select-none">
+                {/* Desktop Left Gutter play button */}
+                <div className="hidden sm:flex absolute -left-12 top-3 items-center justify-end w-10 select-none">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -422,14 +441,54 @@ export default function ReaderView({
                   )}
                 </div>
 
-                <p className="select-text whitespace-pre-wrap leading-relaxed">
-                  {highlightText(chunk.text, searchQuery, isCurrentSearchBlock)}
-                </p>
+                {/* Mobile block header (inline play button and badge) */}
+                <div className="flex sm:hidden items-center justify-between gap-2 mb-2 pb-1 border-b border-current/10 select-none">
+                  <span className="text-[11px] font-mono opacity-50">
+                    Block #{chunk.id + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onSelectBlock) onSelectBlock(chunk.id);
+                    }}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition ${
+                      isActive
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    {isActive && isPlaying ? (
+                      <>
+                        <Pause className="w-3 h-3 fill-current" />
+                        <span>Pause</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Play</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Rendered content */}
+                {searchQuery && searchQuery.trim() ? (
+                  <p className="select-text whitespace-pre-wrap leading-relaxed">
+                    {highlightText(chunk.text, searchQuery, isCurrentSearchBlock)}
+                  </p>
+                ) : (
+                  <div
+                    className="select-text reader-markdown leading-relaxed break-words"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(chunk.text) }}
+                  />
+                )}
               </div>
             );
           })}
         </div>
       </main>
+
 
       {/* Kindle Display Options Drawer */}
       <DisplaySettingsDrawer

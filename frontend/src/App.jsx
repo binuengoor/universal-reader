@@ -21,11 +21,51 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   
-  // Default voice & model - initialized to edge-tts default
-  const [selectedVoice, setSelectedVoice] = useState('en-US-ChristopherNeural');
-  const [selectedModel, setSelectedModel] = useState('edge-tts');
+  // Default voice & model - initialized from localStorage if available, or backend default
+  const [selectedVoice, setSelectedVoice] = useState(() => {
+    try {
+      return localStorage.getItem('universal_reader_voice') || 'en-US-ChristopherNeural';
+    } catch {
+      return 'en-US-ChristopherNeural';
+    }
+  });
+  const [selectedModel, setSelectedModel] = useState(() => {
+    try {
+      return localStorage.getItem('universal_reader_model') || 'edge-tts';
+    } catch {
+      return 'edge-tts';
+    }
+  });
 
   const audioRef = useRef(null);
+
+  // Fetch backend settings on mount to ensure user's configured default model and voice are picked up
+  useEffect(() => {
+    let ignore = false;
+    fetch('/api/settings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!ignore && data) {
+          const model = data.tts_default_model || data.default_model;
+          const voice = data.tts_default_voice || data.default_voice;
+          if (model) {
+            setSelectedModel(() => {
+              return localStorage.getItem('universal_reader_model') || model;
+            });
+          }
+          if (voice) {
+            setSelectedVoice(() => {
+              return localStorage.getItem('universal_reader_voice') || voice;
+            });
+          }
+
+        }
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const [readerSettings, setReaderSettings] = useState(() => {
     try {
@@ -42,6 +82,7 @@ export default function App() {
       contentWidth: 'max-w-3xl',
     };
   });
+
 
   // Fetch document summary (e.g. block count) when selectedDocId changes
   useEffect(() => {
