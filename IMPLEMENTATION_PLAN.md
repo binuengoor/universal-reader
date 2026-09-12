@@ -81,7 +81,7 @@
 
 ## Phase 10: State-Tracked Batch LLM, Persistent Global Player & Reader Power Suite
 - [x] Implement SHA-256 content_hash calculation, llm_state metadata persistence, and smart skipping in backend/routes.py and backend/chunking.py.
-- [ ] Implement Pronunciation Glossary configuration in backend/config.py and phonetic replacements in backend/cleaner.py.
+- [x] Implement Pronunciation Glossary configuration in backend/config.py and phonetic replacements in backend/cleaner.py.
 - [ ] Implement Document Status Lifecycle (inbox/reading/archived), favorite, and last_block_index progress tracking in backend routes.
 - [ ] Write backend unit tests in backend/tests/test_phase10_features.py and verify all test suites pass.
 - [ ] Implement Pronunciation Glossary editor and Batch Results feedback counters in frontend/src/components/SettingsModal.jsx.

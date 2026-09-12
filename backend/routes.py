@@ -13,7 +13,7 @@ from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
 from .tts import tts_client, get_audio_filename, UniversalTTSClient
 from .config import load_settings, save_settings
-from .cleaner import clean_text_for_speech, llm_clean_text, llm_generate_title_and_tags
+from .cleaner import clean_text_for_speech, apply_glossary, llm_clean_text, llm_generate_title_and_tags
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
@@ -398,10 +398,15 @@ async def _synthesize_or_get_cached_audio(
     if target_block is None:
         raise HTTPException(status_code=404, detail=f"Block {block_id} not found")
 
+    settings = load_settings()
+    glossary = settings.get("glossary", [])
+
     block_text = target_block.get("text", "").strip()
     speech_text = target_block.get("speech_text")
     if not speech_text or not speech_text.strip():
-        speech_text = clean_text_for_speech(block_text)
+        speech_text = clean_text_for_speech(block_text, glossary=glossary)
+    else:
+        speech_text = apply_glossary(speech_text, glossary=glossary)
     if not speech_text.strip():
         speech_text = block_text
 
@@ -530,6 +535,9 @@ async def export_full_audio(
     cache_dir = os.path.join(doc_dir, "audio_cache")
     os.makedirs(cache_dir, exist_ok=True)
 
+    settings = load_settings()
+    glossary = settings.get("glossary", [])
+
     # Gather or synthesize all blocks
     combined_audio = bytearray()
     for chunk in chunks:
@@ -537,7 +545,9 @@ async def export_full_audio(
         block_text = chunk.get("text", "").strip()
         speech_text = chunk.get("speech_text")
         if not speech_text or not speech_text.strip():
-            speech_text = clean_text_for_speech(block_text)
+            speech_text = clean_text_for_speech(block_text, glossary=glossary)
+        else:
+            speech_text = apply_glossary(speech_text, glossary=glossary)
         if not speech_text.strip():
             speech_text = block_text
 

@@ -21,6 +21,7 @@ def load_settings() -> Dict[str, Any]:
         "llm_model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
         "llm_prompt": os.environ.get("LLM_PROMPT", ""),
         "llm_clean_enabled": False,
+        "glossary": [],
     }
     if os.path.exists(CONFIG_FILE):
         try:
@@ -38,6 +39,20 @@ def load_settings() -> Dict[str, Any]:
         settings["scoped_voices"] = []
     settings["scoped_voices_enabled"] = bool(settings.get("scoped_voices_enabled", False))
     settings["llm_clean_enabled"] = bool(settings.get("llm_clean_enabled", False))
+    if not isinstance(settings.get("glossary"), list):
+        settings["glossary"] = []
+    else:
+        # Sanitize glossary items
+        sanitized_glossary = []
+        for item in settings["glossary"]:
+            if isinstance(item, dict) and "find" in item and "replace" in item:
+                find_str = str(item["find"]).strip()
+                if find_str:
+                    sanitized_glossary.append({
+                        "find": find_str,
+                        "replace": str(item["replace"]).strip()
+                    })
+        settings["glossary"] = sanitized_glossary
     return settings
 
 def save_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:

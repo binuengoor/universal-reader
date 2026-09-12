@@ -59,7 +59,22 @@ EMPHASIS_ITALIC_STAR = re.compile(r'(?<!\S)\*([^\*\n]+)\*(?!\S)')
 EMPHASIS_ITALIC_UNDERSCORE = re.compile(r'(?<!\S)_([^_\n]+)_(?!\S)')
 
 
-def clean_text_for_speech(text: str) -> str:
+def apply_glossary(text: str, glossary: Optional[List[Dict[str, str]]] = None) -> str:
+    """Apply custom phonetic or acronym substitutions based on user glossary."""
+    if not text or not glossary:
+        return text
+    result = text
+    for item in glossary:
+        find = item.get("find", "").strip() if isinstance(item, dict) else ""
+        replace = item.get("replace", "").strip() if isinstance(item, dict) else ""
+        if find:
+            # Word boundary regex with case insensitivity
+            pattern = re.compile(r'\b' + re.escape(find) + r'\b', re.IGNORECASE)
+            result = pattern.sub(replace, result)
+    return result
+
+
+def clean_text_for_speech(text: str, glossary: Optional[List[Dict[str, str]]] = None) -> str:
     """
     Deterministically cleans text to produce natural, smooth speech output:
     - Strips emojis and pictographs
@@ -69,11 +84,16 @@ def clean_text_for_speech(text: str) -> str:
     - Strips heading hashes, blockquote markers, table syntax
     - Removes markdown asterisks/underscores/tildes
     - Normalizes excessive whitespace and punctuation
+    - Applies custom pronunciation glossary replacements
     """
     if not text:
         return ""
 
     s = text
+
+    # Apply custom phonetic glossary if provided
+    if glossary:
+        s = apply_glossary(s, glossary)
 
     # Remove code fences first (keeping text inside)
     s = CODE_FENCE_PATTERN.sub(r'\1', s)
