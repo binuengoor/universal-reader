@@ -18,8 +18,10 @@ import {
   Square,
   ArrowUpDown,
   Tag,
-  Headphones
+  Headphones,
+  Sparkles
 } from 'lucide-react';
+import TagInput from './TagInput';
 
 export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings }) {
   const [documents, setDocuments] = useState([]);
@@ -45,7 +47,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   const [customTitle, setCustomTitle] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [scratchContent, setScratchContent] = useState('');
-  const [scratchTags, setScratchTags] = useState('');
+  const [modalTags, setModalTags] = useState([]);
 
   const fetchDocuments = async (showLoading = true) => {
     try {
@@ -201,6 +203,9 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
       if (customTitle.trim()) {
         formData.append('title', customTitle.trim());
       }
+      if (modalTags && modalTags.length > 0) {
+        formData.append('tags', modalTags.join(','));
+      }
       const res = await fetch('/api/documents/upload', {
         method: 'POST',
         body: formData,
@@ -227,14 +232,13 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     setIsSubmitting(true);
     setModalError(null);
     try {
-      const parsedTags = scratchTags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
       const res = await fetch('/api/documents/url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: urlInput.trim(),
           title: customTitle.trim() || undefined,
-          tags: parsedTags,
+          tags: modalTags.length > 0 ? modalTags : undefined,
         }),
       });
       const data = await res.json();
@@ -259,14 +263,13 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     setIsSubmitting(true);
     setModalError(null);
     try {
-      const parsedTags = scratchTags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
       const res = await fetch('/api/documents/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: scratchContent.trim(),
           title: customTitle.trim() || undefined,
-          tags: parsedTags,
+          tags: modalTags.length > 0 ? modalTags : undefined,
         }),
       });
       const data = await res.json();
@@ -291,7 +294,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     setCustomTitle('');
     setUrlInput('');
     setScratchContent('');
-    setScratchTags('');
+    setModalTags([]);
   };
 
   const formatDate = (isoStr) => {
@@ -748,10 +751,20 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <label className="block text-xs font-medium text-zinc-300 mb-1">Optional Title Override</label>
                 <input
                   type="text"
-                  placeholder="e.g. My Important Article"
+                  placeholder="e.g. My Important Article (AI generated if blank)"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-300 mb-1">Category Tags (Max 50 Global)</label>
+                <TagInput
+                  tags={modalTags}
+                  onChange={setModalTags}
+                  availableTags={allTagsWithCount}
+                  placeholder="Choose or create category (AI generated if blank)..."
                 />
               </div>
 
@@ -814,7 +827,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <label className="block text-xs font-medium text-zinc-300 mb-1">Optional Title Override</label>
                 <input
                   type="text"
-                  placeholder="Auto-extracted if blank"
+                  placeholder="Auto-extracted or AI-generated if blank"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
@@ -822,13 +835,12 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Tags (comma-separated)</label>
-                <input
-                  type="text"
-                  placeholder="news, tech, research"
-                  value={scratchTags}
-                  onChange={(e) => setScratchTags(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                <label className="block text-xs font-medium text-zinc-300 mb-1">Category Tags (Max 50 Global)</label>
+                <TagInput
+                  tags={modalTags}
+                  onChange={setModalTags}
+                  availableTags={allTagsWithCount}
+                  placeholder="Select or type category (AI generated if blank)..."
                 />
               </div>
 
@@ -879,7 +891,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                 <label className="block text-xs font-medium text-zinc-300 mb-1">Title (Optional)</label>
                 <input
                   type="text"
-                  placeholder="Doc - YYYY-MM-DD HH:mm"
+                  placeholder="Doc title (AI generated if blank)"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
@@ -887,13 +899,12 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Tags (comma-separated)</label>
-                <input
-                  type="text"
-                  placeholder="notes, ai, ideas"
-                  value={scratchTags}
-                  onChange={(e) => setScratchTags(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800/80 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                <label className="block text-xs font-medium text-zinc-300 mb-1">Category Tags (Max 50 Global)</label>
+                <TagInput
+                  tags={modalTags}
+                  onChange={setModalTags}
+                  availableTags={allTagsWithCount}
+                  placeholder="Select or type category (AI generated if blank)..."
                 />
               </div>
 

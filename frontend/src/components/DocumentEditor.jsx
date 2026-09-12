@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2, Tag, X, Plus } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, AlertCircle, FileEdit, Undo2, Tag, X, Plus, Sparkles } from 'lucide-react';
+import TagInput from './TagInput';
 
 export default function DocumentEditor({ docId, onBack, onSaved }) {
   const [title, setTitle] = useState('');
@@ -13,6 +14,8 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
 
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [availableTags, setAvailableTags] = useState([]);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -21,14 +24,25 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch(`/api/documents/${docId}/raw`);
-        if (!res.ok) throw new Error('Failed to load raw document content');
-        const data = await res.json();
+        const [rawRes, tagsRes] = await Promise.all([
+          fetch(`/api/documents/${docId}/raw`),
+          fetch('/api/tags')
+        ]);
+        if (!rawRes.ok) throw new Error('Failed to load raw document content');
+        const data = await rawRes.json();
+        
+        let fetchedTags = [];
+        if (tagsRes.ok) {
+          const tData = await tagsRes.json();
+          fetchedTags = tData.tags || [];
+        }
+
         if (!ignore) {
           setTitle(data.title || '');
           setContent(data.content || '');
           const loadedTags = data.meta?.tags || [];
           setTags(loadedTags);
+          setAvailableTags(fetchedTags);
 
           setOriginalTitle(data.title || '');
           setOriginalContent(data.content || '');
@@ -54,23 +68,32 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
     content !== originalContent || 
     JSON.stringify(tags) !== JSON.stringify(originalTags);
 
-  const handleAddTag = () => {
-    const clean = tagInput.trim().toLowerCase().replace(/^#/, '');
-    if (clean && !tags.includes(clean)) {
-      setTags([...tags, clean]);
-      setTagInput('');
+  const handleAiSuggest = async () => {
+    if (!content.trim()) return;
+    try {
+      setIsGeneratingAi(true);
+      setError(null);
+      const res = await fetch('/api/documents/batch-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_type: 'all',
+          doc_ids: [docId],
+          overwrite: true
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'AI generation failed');
+      const item = data.results && data.results[0];
+      if (item) {
+        if (item.new_title) setTitle(item.new_title);
+        if (item.new_tags) setTags(item.new_tags);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to generate AI title and tags');
+    } finally {
+      setIsGeneratingAi(false);
     }
-  };
-
-  const handleTagKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      handleAddTag();
-    }
-  };
-
-  const handleRemoveTag = (tagToRemove) => {
-    setTags(tags.filter((t) => t !== tagToRemove));
   };
 
   const handleSave = async (e) => {
@@ -124,48 +147,53 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-3">
+      <div className="min-h-screen bg-black text-zinc-100 flex flex-col items-center justify-center gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-        <p className="text-sm text-zinc-400">Loading document editor...</p>
+        <p className="text-sm text-zinc-400">Loading document for editing...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      {/* Top Bar */}
-      <header className="border-b border-zinc-800 bg-zinc-900/60 backdrop-blur sticky top-0 z-30 px-6 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
+    <div className="min-h-screen bg-black text-zinc-100 flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-20 backdrop-blur-md bg-zinc-950/80 border-b border-zinc-800 px-6 py-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition cursor-pointer"
-            title="Cancel and return"
+            className="p-2 rounded-lg hover:bg-zinc-800 transition text-zinc-400 hover:text-zinc-200 cursor-pointer"
+            title="Back"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2 min-w-0">
-            <FileEdit className="w-5 h-5 text-indigo-400 flex-shrink-0" />
-            <h1 className="font-semibold text-sm truncate">Edit Document</h1>
-            {hasChanges && (
-              <span className="text-[11px] bg-amber-500/15 text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-full font-medium">
-                Unsaved changes
-              </span>
-            )}
+          <div className="flex items-center gap-2">
+            <FileEdit className="w-5 h-5 text-indigo-400" />
+            <h1 className="font-semibold text-sm sm:text-base">Edit Document</h1>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleAiSuggest}
+            disabled={isGeneratingAi || !content.trim()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 text-xs font-semibold rounded-lg transition shadow-xs cursor-pointer disabled:opacity-50"
+            title="Use LLM to suggest title and category tags"
+          >
+            {isGeneratingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            <span>AI Suggest</span>
+          </button>
+
           {hasChanges && (
             <button
               type="button"
               onClick={handleReset}
               disabled={isSaving}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
-              title="Reset changes"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-medium rounded-lg transition cursor-pointer"
             >
               <Undo2 className="w-3.5 h-3.5" />
-              Reset
+              <span>Reset</span>
             </button>
           )}
 
@@ -207,52 +235,21 @@ export default function DocumentEditor({ docId, onBack, onSaved }) {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5 flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-zinc-400" />
-              Tags (e.g. ai, tech, news)
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-zinc-400" />
+                Category Tags
+              </span>
+              <span className="text-[10px] text-zinc-500">Max 50 Global</span>
             </label>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                placeholder="Add tag and press Enter"
-                className="flex-1 px-3 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
-              />
-              <button
-                type="button"
-                onClick={handleAddTag}
-                disabled={!tagInput.trim()}
-                className="px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-xs font-semibold rounded-xl text-zinc-300 transition cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              availableTags={availableTags}
+              placeholder="Add category tag..."
+            />
           </div>
         </div>
-
-        {/* Tag pills display */}
-        {tags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-zinc-500 mr-1">Tags:</span>
-            {tags.map((t) => (
-              <span
-                key={t}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/20"
-              >
-                #{t}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveTag(t)}
-                  className="p-0.5 hover:bg-indigo-500/20 rounded-md text-indigo-400 hover:text-indigo-200 transition cursor-pointer"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
 
         <div className="flex-1 flex flex-col min-h-[450px]">
           <div className="flex items-center justify-between mb-1.5 text-xs text-zinc-400">

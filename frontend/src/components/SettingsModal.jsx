@@ -10,7 +10,11 @@ import {
   Loader2, 
   Star, 
   Bot, 
-  Search
+  Search,
+  Sparkles,
+  Play,
+  Tag,
+  RefreshCw
 } from 'lucide-react';
 
 
@@ -29,12 +33,26 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   const [availableVoices, setAvailableVoices] = useState([]);
   const [voiceFilterSearch, setVoiceFilterSearch] = useState('');
 
-  // LLM Cleaner Settings
+  // LLM Engine Settings
   const [llmBaseUrl, setLlmBaseUrl] = useState('');
   const [llmApiKey, setLlmApiKey] = useState('');
   const [llmModel, setLlmModel] = useState('gpt-4o-mini');
   const [llmPrompt, setLlmPrompt] = useState('');
   const [llmCleanEnabled, setLlmCleanEnabled] = useState(false);
+
+  // LLM Tasks & Batch Jobs
+  const [activeJob, setActiveJob] = useState(null); // 'title' | 'tags' | 'clean_text' | 'all'
+  const [jobOverwrite, setJobOverwrite] = useState(false);
+  const [jobRunning, setJobRunning] = useState(false);
+  const [jobResult, setJobResult] = useState(null);
+
+  // Tags Health & Consolidation
+  const [libraryTags, setLibraryTags] = useState([]);
+  const [tagsStats, setTagsStats] = useState({ total_tags: 0, max_tags: 50, remaining_capacity: 50 });
+  const [renameOldTag, setRenameOldTag] = useState('');
+  const [renameNewTag, setRenameNewTag] = useState('');
+  const [isRenamingTag, setIsRenamingTag] = useState(false);
+  const [tagOpMessage, setTagOpMessage] = useState(null);
   
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -44,6 +62,24 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   const [llmTestResult, setLlmTestResult] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState(null);
+
+  const fetchTagsData = async () => {
+    try {
+      const res = await fetch('/api/tags');
+      if (res.ok) {
+        const data = await res.json();
+        setLibraryTags(data.tags || []);
+        setTagsStats({
+          total_tags: data.total_tags || 0,
+          max_tags: data.max_tags || 50,
+          remaining_capacity: data.remaining_capacity !== undefined ? data.remaining_capacity : 50,
+          total_docs: data.total_docs || 0
+        });
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -56,6 +92,8 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
         setTestResult(null);
         setLlmTestResult(null);
         setSaveSuccess(false);
+        setJobResult(null);
+        setTagOpMessage(null);
 
         const [settingsRes, voicesRes] = await Promise.all([
           fetch('/api/settings'),
@@ -87,6 +125,8 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
 
           setAvailableVoices(voicesList);
         }
+
+        await fetchTagsData();
       } catch (err) {
         if (!ignore) setError(err.message || 'Error loading settings');
       } finally {
@@ -100,6 +140,82 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
     };
   }, [isOpen]);
 
+  const handleRunBatchJob = async (jobType) => {
+    try {
+      setJobRunning(true);
+      setActiveJob(jobType);
+      setJobResult(null);
+      setError(null);
+
+      const res = await fetch('/api/documents/batch-llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_type: jobType,
+          overwrite: jobOverwrite
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Batch job failed');
+
+      setJobResult({
+        success: true,
+        message: `Batch job '${jobType}' completed: ${data.processed_count} of ${data.total_evaluated} documents updated.`,
+        data: data.results
+      });
+
+      await fetchTagsData();
+      if (onSettingsUpdated) onSettingsUpdated();
+    } catch (err) {
+      setJobResult({
+        success: false,
+        message: err.message || 'Batch job execution error'
+      });
+    } finally {
+      setJobRunning(false);
+      setActiveJob(null);
+    }
+  };
+
+  const handleRenameTag = async (e) => {
+    e.preventDefault();
+    if (!renameOldTag.trim() || !renameNewTag.trim()) return;
+
+    try {
+      setIsRenamingTag(true);
+      setTagOpMessage(null);
+
+      const res = await fetch('/api/tags/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          old_tag: renameOldTag.trim(),
+          new_tag: renameNewTag.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to rename tag');
+
+      setTagOpMessage({
+        success: true,
+        message: `Merged #${data.old_tag} into #${data.new_tag} across ${data.updated_documents} document(s).`
+      });
+
+      setRenameOldTag('');
+      setRenameNewTag('');
+      await fetchTagsData();
+      if (onSettingsUpdated) onSettingsUpdated();
+    } catch (err) {
+      setTagOpMessage({
+        success: false,
+        message: err.message || 'Error renaming tag'
+      });
+    } finally {
+      setIsRenamingTag(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -290,7 +406,20 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            AI Text Cleaner
+            LLM Engine
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('tasks')}
+            className={`px-3 py-2 border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === 'tasks'
+                ? 'border-indigo-500 text-indigo-400 font-semibold'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Tasks & Batch Jobs
           </button>
         </div>
 
@@ -593,6 +722,186 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                     {testingLlm ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                     Test LLM Connection
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: Tasks & Batch Jobs */}
+            {activeTab === 'tasks' && (
+              <div className="space-y-4">
+                {jobResult && (
+                  <div
+                    className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                      jobResult.success
+                        ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                        : 'bg-red-950/40 border-red-800/60 text-red-300'
+                    }`}
+                  >
+                    {jobResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                    )}
+                    <span>{jobResult.message}</span>
+                  </div>
+                )}
+
+                {/* Batch Job Trigger Actions */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-zinc-200">Library Batch Jobs</h4>
+                    <label className="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={jobOverwrite}
+                        onChange={(e) => setJobOverwrite(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-indigo-600 rounded"
+                      />
+                      <span>Overwrite existing</span>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRunBatchJob('title')}
+                      disabled={jobRunning || !llmBaseUrl}
+                      className="p-3 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 rounded-xl text-left transition disabled:opacity-50 flex flex-col gap-1 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-zinc-100">Re-evaluate Titles</span>
+                        {jobRunning && activeJob === 'title' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5 text-zinc-400" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400">Generate descriptive titles for untitled notes.</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRunBatchJob('tags')}
+                      disabled={jobRunning || !llmBaseUrl}
+                      className="p-3 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 rounded-xl text-left transition disabled:opacity-50 flex flex-col gap-1 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-zinc-100">Re-generate Tags</span>
+                        {jobRunning && activeJob === 'tags' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        ) : (
+                          <Tag className="w-3.5 h-3.5 text-zinc-400" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400">Classify documents under 50 global categories.</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRunBatchJob('clean_text')}
+                      disabled={jobRunning || !llmBaseUrl}
+                      className="p-3 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 rounded-xl text-left transition disabled:opacity-50 flex flex-col gap-1 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-zinc-100">Re-clean Speech Text</span>
+                        {jobRunning && activeJob === 'clean_text' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5 text-zinc-400" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400">Normalize chunk texts for natural pronunciation.</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRunBatchJob('all')}
+                      disabled={jobRunning || !llmBaseUrl}
+                      className="p-3 bg-indigo-950/40 hover:bg-indigo-900/40 border border-indigo-700/60 rounded-xl text-left transition disabled:opacity-50 flex flex-col gap-1 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-indigo-200">Run Full Pass</span>
+                        {jobRunning && activeJob === 'all' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-indigo-300/70">Execute all enhancement tasks across library.</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Category Capacity & Consolidation */}
+                <div className="p-3.5 bg-zinc-800/40 border border-zinc-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Tag className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-semibold text-zinc-200">Tag Capacity & Consolidation</span>
+                    </div>
+                    <span className="text-xs font-mono font-medium text-indigo-300">
+                      {tagsStats.total_tags} / {tagsStats.max_tags} used
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        tagsStats.total_tags >= 50
+                          ? 'bg-amber-500'
+                          : tagsStats.total_tags > 40
+                          ? 'bg-indigo-400'
+                          : 'bg-indigo-600'
+                      }`}
+                      style={{ width: `${Math.min(100, (tagsStats.total_tags / tagsStats.max_tags) * 100)}%` }}
+                    />
+                  </div>
+
+                  {tagOpMessage && (
+                    <div
+                      className={`p-2 rounded-lg text-[11px] flex items-center gap-1.5 ${
+                        tagOpMessage.success
+                          ? 'bg-emerald-950/40 text-emerald-300'
+                          : 'bg-red-950/40 text-red-300'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{tagOpMessage.message}</span>
+                    </div>
+                  )}
+
+                  {/* Merge / Rename Form */}
+                  <div className="pt-1">
+                    <p className="text-[11px] text-zinc-400 mb-1.5">
+                      Merge redundant tags to free up global slots:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Old tag (e.g. ai)"
+                        value={renameOldTag}
+                        onChange={(e) => setRenameOldTag(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-xs text-zinc-500">→</span>
+                      <input
+                        type="text"
+                        placeholder="New tag (e.g. artificial-intelligence)"
+                        value={renameNewTag}
+                        onChange={(e) => setRenameNewTag(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRenameTag}
+                        disabled={isRenamingTag || !renameOldTag.trim() || !renameNewTag.trim()}
+                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-xs font-semibold rounded-lg text-zinc-200 transition cursor-pointer flex-shrink-0"
+                      >
+                        {isRenamingTag ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Merge'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

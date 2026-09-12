@@ -68,5 +68,13 @@
 - [x] Add PWA support: `manifest.json`, high-res icons, and Service Worker caching in `frontend/`.
 - [x] Run full test suite, linting, production build, and verify end-to-end.
 
-
-
+## Phase 9: LLM Title & Tag Generation, Tag Autocomplete, LLM Tasks & Batch Jobs
+- [x] Implement backend LLM title and tag generator in `backend/cleaner.py` with 50-tag global constraint logic.
+- [x] Update document ingestion routes (`/create`, `/url`, `/upload`) to auto-generate title & tags via LLM when unspecified.
+- [x] Implement tags management endpoints (`GET /api/tags`, `POST /api/tags/rename`) and LLM batch jobs endpoint (`POST /api/documents/batch-llm`).
+- [x] Add backend unit tests for title/tag generation, 50-tag limit, tag rename/merge, and batch jobs.
+- [x] Build interactive `TagInput` component with live matching autocomplete from existing library tags.
+- [x] Integrate `TagInput` in `LibraryView` modals (URL, Scratchpad, Upload) and `DocumentEditor`.
+- [x] Update `SettingsModal` to rename "AI Text Cleaner" to "LLM Engine", add "LLM Tasks & Batch Jobs" tab, and Tag Health / Consolidation Manager.
+- [x] Add Reader View QoL enhancements: word count, estimated reading/listening time badges, and tag chips in header.
+- [x] Run full backend pytest suite, frontend build, rebuild Docker container, and verify live.

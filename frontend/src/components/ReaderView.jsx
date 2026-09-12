@@ -10,7 +10,9 @@ import {
   Type,
   Play,
   Pause,
-  FileEdit
+  FileEdit,
+  Tag,
+  Clock
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -266,10 +268,32 @@ export default function ReaderView({
           </button>
           <div className="min-w-0">
             <h1 className="font-semibold text-base truncate">{meta?.title || 'Untitled Document'}</h1>
-            <div className="flex items-center gap-3 text-xs opacity-60">
-              <span className="uppercase tracking-wider font-mono">{meta?.source_type || 'text'}</span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs opacity-65 mt-0.5">
+              <span className="uppercase tracking-wider font-mono text-[10px]">{meta?.source_type || 'text'}</span>
               <span>•</span>
               <span>{chunks?.length || 0} blocks</span>
+              <span>•</span>
+              <span>{Math.round((meta?.total_chars || 0) / 5)} words</span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3 opacity-60" />
+                ~{Math.max(1, Math.round((meta?.total_chars || 0) / 1000))} min read
+              </span>
+              {meta?.tags && meta.tags.length > 0 && (
+                <>
+                  <span>•</span>
+                  <div className="inline-flex items-center gap-1">
+                    {meta.tags.map((t) => (
+                      <span
+                        key={t}
+                        className="px-1.5 py-0.2 text-[10px] rounded-sm bg-indigo-500/20 text-indigo-300 font-mono"
+                      >
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
               {activeBlockId !== null && (
                 <>
                   <span>•</span>

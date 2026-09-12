@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from .routes import router as documents_router, models_router, voices_router, settings_router
+from .routes import router as documents_router, models_router, voices_router, settings_router, tags_router
 
 app = FastAPI(title="Universal Reader API")
 
@@ -20,6 +20,7 @@ app.include_router(documents_router)
 app.include_router(models_router)
 app.include_router(voices_router)
 app.include_router(settings_router)
+app.include_router(tags_router)
 
 # Mount frontend static files if built
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")

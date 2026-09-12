@@ -6,16 +6,17 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
 from .tts import tts_client, get_audio_filename, UniversalTTSClient
 from .config import load_settings, save_settings
-from .cleaner import clean_text_for_speech, llm_clean_text
+from .cleaner import clean_text_for_speech, llm_clean_text, llm_generate_title_and_tags
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
+tags_router = APIRouter(prefix="/api/tags", tags=["tags"])
 
 
 @models_router.get("")
@@ -613,22 +614,88 @@ async def invalidate_block_cache(doc_id: str, block_id: int):
                     count += 1
     return {"status": "block_cache_invalidated", "doc_id": doc_id, "block_id": block_id, "files_removed": count}
 
+
+def get_all_library_tags() -> List[str]:
+    """Retrieve all unique tags across all documents in the library."""
+    unique = set()
+    if not os.path.exists(BASE_DATA_DIR):
+        return []
+    for entry in os.scandir(BASE_DATA_DIR):
+        if entry.is_dir():
+            meta_path = os.path.join(entry.path, "meta.json")
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                        for t in meta.get("tags", []):
+                            if t and str(t).strip():
+                                unique.add(str(t).strip().lower())
+                except Exception:
+                    pass
+    return sorted(list(unique))
+
+
+async def _resolve_title_and_tags(
+    content: str,
+    user_title: Optional[str],
+    user_tags: Optional[List[str]],
+    default_title: str
+) -> Tuple[str, List[str]]:
+    """
+    If title or tags are not specified, call OpenAI-compatible LLM if configured.
+    Respects user overrides and the 50-tag global constraint.
+    """
+    settings = load_settings()
+    llm_base = settings.get("llm_base_url", "").strip()
+    llm_key = settings.get("llm_api_key", "").strip()
+    llm_model = settings.get("llm_model", "gpt-4o-mini").strip()
+
+    title = user_title.strip() if (user_title and user_title.strip()) else None
+    tags = [t.strip().lower() for t in user_tags if t and t.strip()] if user_tags is not None else None
+
+    # If both user provided title and tags, no need for LLM
+    if title is not None and tags is not None and len(tags) > 0:
+        return title, tags
+
+    # Attempt LLM generation if URL configured
+    if llm_base and (title is None or tags is None or len(tags) == 0):
+        all_tags = get_all_library_tags()
+        llm_title, llm_tags = await llm_generate_title_and_tags(
+            content=content,
+            existing_tags=all_tags,
+            llm_base_url=llm_base,
+            llm_api_key=llm_key,
+            llm_model=llm_model
+        )
+        if title is None and llm_title:
+            title = llm_title
+        if (tags is None or len(tags) == 0) and llm_tags:
+            tags = llm_tags
+
+    final_title = title if title else default_title
+    final_tags = tags if tags is not None else []
+    return final_title, final_tags
+
+
 @router.post("/create")
 async def create_document(req: CreateDocRequest):
-    """Create document from scratchpad text."""
+    """Create document from scratchpad text with optional LLM title/tags."""
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="Content cannot be empty")
 
     now = datetime.now()
-    title = req.title.strip() if (req.title and req.title.strip()) else f"Doc - {now.strftime('%Y-%m-%d %H:%M')}"
+    default_title = f"Doc - {now.strftime('%Y-%m-%d %H:%M')}"
+    title, tags = await _resolve_title_and_tags(content, req.title, req.tags, default_title)
+
     chunks = chunk_text(content)
     if not chunks:
         raise HTTPException(status_code=400, detail="Unable to extract meaningful text")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "text", content, chunks, tags=req.tags)
-    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": req.tags or []}
+    save_document(doc_id, title, "text", content, chunks, tags=tags)
+    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags}
+
 
 @router.post("/url")
 async def ingest_url(req: UrlDocRequest):
@@ -645,26 +712,34 @@ async def ingest_url(req: UrlDocRequest):
     if not extracted or not extracted.strip():
         raise HTTPException(status_code=400, detail="Could not extract readable article text from this URL")
 
-    title = req.title.strip() if (req.title and req.title.strip()) else None
-    if not title:
+    # Check extracted metadata title if user didn't supply one
+    meta_title = None
+    if not (req.title and req.title.strip()):
         metadata = trafilatura.extract_metadata(downloaded)
         if metadata and metadata.title:
-            title = metadata.title.strip()
+            meta_title = metadata.title.strip()
 
-    if not title:
-        now = datetime.now()
-        title = f"Web - {url.split('//')[-1].split('/')[0]} ({now.strftime('%Y-%m-%d')})"
+    now = datetime.now()
+    domain = url.split('//')[-1].split('/')[0]
+    default_title = meta_title or f"Web - {domain} ({now.strftime('%Y-%m-%d')})"
+
+    title, tags = await _resolve_title_and_tags(extracted, req.title or meta_title, req.tags, default_title)
 
     chunks = chunk_text(extracted)
     if not chunks:
         raise HTTPException(status_code=400, detail="Extracted content is too short or empty")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "url", extracted, chunks, tags=req.tags)
-    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": req.tags or []}
+    save_document(doc_id, title, "url", extracted, chunks, tags=tags)
+    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags}
+
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...), title: Optional[str] = Form(None)):
+async def upload_file(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None)
+):
     """Upload and parse PDF, DOCX, ePub, or plain text / markdown file."""
     filename = file.filename or "uploaded_file"
     ext = os.path.splitext(filename)[1].lower()
@@ -691,11 +766,227 @@ async def upload_file(file: UploadFile = File(...), title: Optional[str] = Form(
     if not text.strip():
         raise HTTPException(status_code=400, detail="Could not extract readable text from uploaded file")
 
-    doc_title = title.strip() if (title and title.strip()) else os.path.splitext(filename)[0]
+    default_title = os.path.splitext(filename)[0]
+    user_tags = [t.strip().lower() for t in tags.split(",") if t.strip()] if tags else None
+    resolved_title, resolved_tags = await _resolve_title_and_tags(text, title, user_tags, default_title)
+
     chunks = chunk_text(text)
     if not chunks:
         raise HTTPException(status_code=400, detail="File content resulted in 0 readable blocks")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, doc_title, source_type, text, chunks)
-    return {"id": doc_id, "title": doc_title, "block_count": len(chunks)}
+    save_document(doc_id, resolved_title, source_type, text, chunks, tags=resolved_tags)
+    return {"id": doc_id, "title": resolved_title, "block_count": len(chunks), "tags": resolved_tags}
+
+
+class BatchLlmRequest(BaseModel):
+    job_type: str  # 'title' | 'tags' | 'clean_text' | 'all'
+    doc_ids: Optional[List[str]] = None
+    overwrite: bool = False
+
+
+@router.post("/batch-llm")
+async def run_batch_llm_job(req: BatchLlmRequest):
+    """
+    Run bulk background/batch LLM tasks on documents:
+    - 'title': re-evaluate or generate titles
+    - 'tags': re-evaluate categories with 50-tag constraint
+    - 'clean_text': re-generate speech_text for audio chunks using LLM
+    - 'all': full optimization pass
+    """
+    settings = load_settings()
+    llm_base = settings.get("llm_base_url", "").strip()
+    llm_key = settings.get("llm_api_key", "").strip()
+    llm_model = settings.get("llm_model", "gpt-4o-mini").strip()
+
+    if not llm_base:
+        raise HTTPException(status_code=400, detail="LLM Base URL is not configured in Settings")
+
+    all_docs = []
+    if not os.path.exists(BASE_DATA_DIR):
+        return {"status": "completed", "processed_count": 0, "results": []}
+
+    target_ids = set(req.doc_ids) if req.doc_ids else None
+
+    for entry in os.scandir(BASE_DATA_DIR):
+        if entry.is_dir():
+            if target_ids is None or entry.name in target_ids:
+                all_docs.append(entry.name)
+
+    results = []
+    processed_count = 0
+
+    for doc_id in all_docs:
+        doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+        meta_path = os.path.join(doc_dir, "meta.json")
+        doc_file = os.path.join(doc_dir, "document.md")
+        chunks_path = os.path.join(doc_dir, "chunks.json")
+
+        if not os.path.exists(meta_path) or not os.path.exists(doc_file):
+            continue
+
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            with open(doc_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            modified = False
+            result_item = {"id": doc_id, "title": meta.get("title")}
+
+            # 1. Title generation
+            if req.job_type in ("title", "all"):
+                curr_title = meta.get("title", "")
+                is_default_title = curr_title.startswith("Doc - ") or curr_title.startswith("Web - ")
+                if req.overwrite or is_default_title or not curr_title:
+                    all_tags = get_all_library_tags()
+                    new_title, _ = await llm_generate_title_and_tags(
+                        content=content,
+                        existing_tags=all_tags,
+                        llm_base_url=llm_base,
+                        llm_api_key=llm_key,
+                        llm_model=llm_model
+                    )
+                    if new_title:
+                        meta["title"] = new_title
+                        result_item["new_title"] = new_title
+                        modified = True
+
+            # 2. Tag generation with 50-tag limit
+            if req.job_type in ("tags", "all"):
+                curr_tags = meta.get("tags", [])
+                if req.overwrite or not curr_tags:
+                    all_tags = get_all_library_tags()
+                    _, new_tags = await llm_generate_title_and_tags(
+                        content=content,
+                        existing_tags=all_tags,
+                        llm_base_url=llm_base,
+                        llm_api_key=llm_key,
+                        llm_model=llm_model
+                    )
+                    if new_tags:
+                        meta["tags"] = new_tags
+                        result_item["new_tags"] = new_tags
+                        modified = True
+
+            # 3. Clean text re-chunking
+            if req.job_type in ("clean_text", "all") and os.path.exists(chunks_path):
+                with open(chunks_path, "r", encoding="utf-8") as cf:
+                    chunks = json.load(cf)
+                chunks_modified = False
+                for c in chunks:
+                    raw_block = c.get("text", "")
+                    if raw_block:
+                        cleaned = await llm_clean_text(
+                            text=raw_block,
+                            llm_base_url=llm_base,
+                            llm_api_key=llm_key,
+                            llm_model=llm_model
+                        )
+                        if cleaned != c.get("speech_text"):
+                            c["speech_text"] = cleaned
+                            chunks_modified = True
+                if chunks_modified:
+                    with open(chunks_path, "w", encoding="utf-8") as cf:
+                        json.dump(chunks, cf, indent=2)
+                    modified = True
+                    result_item["speech_text_updated"] = True
+
+            if modified:
+                meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+                processed_count += 1
+                results.append(result_item)
+
+        except Exception as err:
+            results.append({"id": doc_id, "error": str(err)})
+
+    return {
+        "status": "completed",
+        "job_type": req.job_type,
+        "processed_count": processed_count,
+        "total_evaluated": len(all_docs),
+        "results": results
+    }
+
+
+# Tags Router Endpoints
+@tags_router.get("")
+async def list_tags():
+    """Retrieve all library tags with usage counts and capacity stats."""
+    tag_counts = {}
+    total_docs = 0
+    if os.path.exists(BASE_DATA_DIR):
+        for entry in os.scandir(BASE_DATA_DIR):
+            if entry.is_dir():
+                meta_path = os.path.join(entry.path, "meta.json")
+                if os.path.exists(meta_path):
+                    total_docs += 1
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                            for t in meta.get("tags", []):
+                                if t and str(t).strip():
+                                    norm = str(t).strip().lower()
+                                    tag_counts[norm] = tag_counts.get(norm, 0) + 1
+                    except Exception:
+                        pass
+
+    items = [{"tag": t, "count": c} for t, c in sorted(tag_counts.items(), key=lambda x: (-x[1], x[0]))]
+    return {
+        "tags": items,
+        "total_tags": len(items),
+        "max_tags": 50,
+        "remaining_capacity": max(0, 50 - len(items)),
+        "total_docs": total_docs
+    }
+
+
+class RenameTagRequest(BaseModel):
+    old_tag: str
+    new_tag: str
+
+
+@tags_router.post("/rename")
+async def rename_or_merge_tag(req: RenameTagRequest):
+    """
+    Rename or merge a tag across all documents in the library.
+    Helps maintain clean taxonomy under 50 categories.
+    """
+    old_norm = req.old_tag.strip().lower()
+    new_norm = req.new_tag.strip().lower().replace(" ", "-")
+    if not old_norm or not new_norm:
+        raise HTTPException(status_code=400, detail="Tag names cannot be empty")
+
+    updated_docs = 0
+    if os.path.exists(BASE_DATA_DIR):
+        for entry in os.scandir(BASE_DATA_DIR):
+            if entry.is_dir():
+                meta_path = os.path.join(entry.path, "meta.json")
+                if os.path.exists(meta_path):
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as f:
+                            meta = json.load(f)
+                        tags = meta.get("tags", [])
+                        if old_norm in tags:
+                            new_tags = [new_norm if t == old_norm else t for t in tags]
+                            # Deduplicate preserving order
+                            deduped = []
+                            for t in new_tags:
+                                if t not in deduped:
+                                    deduped.append(t)
+                            meta["tags"] = deduped
+                            meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+                            with open(meta_path, "w", encoding="utf-8") as f:
+                                json.dump(meta, f, indent=2)
+                            updated_docs += 1
+                    except Exception:
+                        pass
+
+    return {
+        "status": "success",
+        "old_tag": old_norm,
+        "new_tag": new_norm,
+        "updated_documents": updated_docs
+    }
