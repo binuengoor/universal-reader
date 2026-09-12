@@ -89,3 +89,9 @@
 - [x] Implement Library Status Tabs (All/Inbox/Reading/Archived/Favorites), Quick Archive/Star toggles, and Full-Text search in frontend/src/components/LibraryView.jsx.
 - [x] Implement Keyboard Shortcuts HUD (?) and PWA Web Share Target handling in frontend/src/App.jsx and manifest.json.
 - [x] Build frontend, verify end-to-end, commit, push to GitHub, monitor CI, and deploy to oracle-xmillionmax:3003.
+
+## Phase 11: Dynamic Dropdowns for Model and Voice Configuration
+- [x] Convert Default Model into a dynamic dropdown fed from `GET /api/models` (with robust standard fallbacks).
+- [x] Convert Default Voice from plain text input into a dynamic `<select>` dropdown populated from `availableVoices` matching the selected model/engine.
+- [x] Add popular preset model suggestions (Groq, Cerebras, OpenAI, Anthropic) to LLM Model Name via HTML datalist dropdown.
+- [x] Build frontend, rebuild local Docker container on port 3003, commit, push to `main`, and deploy to `oracle-xmillionmax:3003`.
