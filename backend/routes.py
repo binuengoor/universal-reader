@@ -235,12 +235,28 @@ class BlockAudioRequest(BaseModel):
     speed: float = 1.0
     response_format: str = "mp3"
 
+class UpdateStatusRequest(BaseModel):
+    status: Optional[str] = None  # "inbox", "reading", "archived"
+    favorite: Optional[bool] = None
+
+class UpdateProgressRequest(BaseModel):
+    last_block_index: int
+    progress_pct: Optional[float] = None
+
 @router.get("")
-async def list_documents():
-    """List all ingested documents from storage."""
+async def list_documents(
+    status: Optional[str] = None,
+    favorite: Optional[bool] = None,
+    tag: Optional[str] = None,
+    q: Optional[str] = None
+):
+    """List all ingested documents from storage with optional filtering and full-text search."""
     docs = []
     if not os.path.exists(BASE_DATA_DIR):
         return docs
+
+    search_term = q.strip().lower() if q else None
+    tag_filter = tag.strip().lower() if tag else None
 
     for entry in os.scandir(BASE_DATA_DIR):
         if entry.is_dir():
@@ -249,16 +265,53 @@ async def list_documents():
                 try:
                     with open(meta_path, "r", encoding="utf-8") as f:
                         meta = json.load(f)
-                        # Add short excerpt from chunks if available
-                        chunks_path = os.path.join(entry.path, "chunks.json")
-                        excerpt = ""
-                        if os.path.exists(chunks_path):
-                            with open(chunks_path, "r", encoding="utf-8") as cf:
-                                chunks = json.load(cf)
-                                if chunks:
-                                    excerpt = chunks[0].get("text", "")[:120] + "..."
-                        meta["excerpt"] = excerpt
-                        docs.append(meta)
+
+                    meta.setdefault("status", "inbox")
+                    meta.setdefault("favorite", False)
+                    meta.setdefault("last_block_index", 0)
+                    meta.setdefault("progress_pct", 0.0)
+
+                    # Status filter
+                    if status and meta.get("status") != status:
+                        continue
+
+                    # Favorite filter
+                    if favorite is not None and meta.get("favorite") != favorite:
+                        continue
+
+                    # Tag filter
+                    if tag_filter:
+                        doc_tags = [t.lower() for t in meta.get("tags", [])]
+                        if tag_filter not in doc_tags:
+                            continue
+
+                    # Full-text or title search
+                    doc_md_path = os.path.join(entry.path, "document.md")
+                    doc_content = ""
+                    if search_term and os.path.exists(doc_md_path):
+                        try:
+                            with open(doc_md_path, "r", encoding="utf-8") as dmf:
+                                doc_content = dmf.read().lower()
+                        except Exception:
+                            pass
+
+                    if search_term:
+                        title_match = search_term in (meta.get("title") or "").lower()
+                        tags_match = any(search_term in t.lower() for t in meta.get("tags", []))
+                        content_match = search_term in doc_content
+                        if not (title_match or tags_match or content_match):
+                            continue
+
+                    # Add short excerpt from chunks if available
+                    chunks_path = os.path.join(entry.path, "chunks.json")
+                    excerpt = ""
+                    if os.path.exists(chunks_path):
+                        with open(chunks_path, "r", encoding="utf-8") as cf:
+                            chunks = json.load(cf)
+                            if chunks:
+                                excerpt = chunks[0].get("text", "")[:120] + "..."
+                    meta["excerpt"] = excerpt
+                    docs.append(meta)
                 except Exception:
                     continue
 
@@ -278,12 +331,83 @@ async def get_document(doc_id: str):
 
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
+    meta.setdefault("status", "inbox")
+    meta.setdefault("favorite", False)
+    meta.setdefault("last_block_index", 0)
+    meta.setdefault("progress_pct", 0.0)
+
     with open(chunks_path, "r", encoding="utf-8") as f:
         chunks = json.load(f)
 
     return {
         "meta": meta,
         "chunks": chunks
+    }
+
+@router.patch("/{doc_id}/status")
+async def update_document_status(doc_id: str, req: UpdateStatusRequest):
+    """Update document lifecycle status ('inbox', 'reading', 'archived') and favorite flag."""
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    meta_path = os.path.join(doc_dir, "meta.json")
+    if not os.path.exists(doc_dir) or not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    if req.status is not None:
+        valid_statuses = ("inbox", "reading", "archived")
+        if req.status not in valid_statuses:
+            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of {valid_statuses}")
+        meta["status"] = req.status
+
+    if req.favorite is not None:
+        meta["favorite"] = bool(req.favorite)
+
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    return {
+        "id": doc_id,
+        "status": meta.get("status", "inbox"),
+        "favorite": meta.get("favorite", False)
+    }
+
+@router.patch("/{doc_id}/progress")
+async def update_document_progress(doc_id: str, req: UpdateProgressRequest):
+    """Update document listening/reading progress and position."""
+    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    meta_path = os.path.join(doc_dir, "meta.json")
+    if not os.path.exists(doc_dir) or not os.path.exists(meta_path):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    block_count = meta.get("block_count", 1) or 1
+    idx = max(0, req.last_block_index)
+    meta["last_block_index"] = idx
+
+    if req.progress_pct is not None:
+        meta["progress_pct"] = round(req.progress_pct, 1)
+    else:
+        calc_pct = ((idx + 1) / block_count) * 100
+        meta["progress_pct"] = round(min(100.0, calc_pct), 1)
+
+    # Auto-transition from inbox to reading once progress begins
+    if meta.get("status") == "inbox" and idx > 0:
+        meta["status"] = "reading"
+
+    meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    return {
+        "id": doc_id,
+        "last_block_index": meta["last_block_index"],
+        "progress_pct": meta["progress_pct"],
+        "status": meta.get("status", "inbox")
     }
 
 @router.get("/{doc_id}/raw")
