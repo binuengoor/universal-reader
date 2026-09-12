@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import LibraryView from './components/LibraryView';
 import ReaderView from './components/ReaderView';
 import AudioPlayer from './components/AudioPlayer';
+import MiniPlayer from './components/MiniPlayer';
 import DocumentEditor from './components/DocumentEditor';
 import SettingsModal from './components/SettingsModal';
 import { priorityAudioQueue } from './utils/priorityAudioQueue';
@@ -10,8 +11,15 @@ export default function App() {
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [editingDocId, setEditingDocId] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Persistent active audio session state
+  const [audioDoc, setAudioDoc] = useState(null); // { id: string, title: string, totalBlocks: number }
   const [activeBlockId, setActiveBlockId] = useState(0);
   const [totalBlocks, setTotalBlocks] = useState(0);
+
+  // Sleep Timer state
+  const [sleepTimer, setSleepTimer] = useState(null); // null | 15 | 30 | 45 | 60 | 'end_of_doc'
+  const [sleepTimerRemaining, setSleepTimerRemaining] = useState(null); // seconds
 
   // Audio playback state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -91,8 +99,16 @@ export default function App() {
       fetch(`/api/documents/${selectedDocId}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (!ignore && data?.chunks) {
-            setTotalBlocks(data.chunks.length);
+          if (!ignore && data) {
+            const count = data.chunks?.length || 0;
+            const title = data.meta?.title || 'Document';
+            setTotalBlocks(count);
+            setAudioDoc((prev) => {
+              if (prev && prev.id === selectedDocId) {
+                return { ...prev, title, totalBlocks: count };
+              }
+              return { id: selectedDocId, title, totalBlocks: count };
+            });
           }
         })
         .catch(() => {});
@@ -102,15 +118,55 @@ export default function App() {
     };
   }, [selectedDocId]);
 
+  // Sleep Timer countdown effect
+  useEffect(() => {
+    if (!sleepTimer || sleepTimer === 'end_of_doc' || !isPlaying) return;
+    const interval = setInterval(() => {
+      setSleepTimerRemaining((prev) => {
+        if (prev === null) return sleepTimer * 60;
+        if (prev <= 1) {
+          setIsPlaying(false);
+          if (audioRef.current) audioRef.current.pause();
+          setSleepTimer(null);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sleepTimer, isPlaying]);
+
+  const handleSetSleepTimer = (val) => {
+    setSleepTimer(val);
+    if (typeof val === 'number') {
+      setSleepTimerRemaining(val * 60);
+    } else {
+      setSleepTimerRemaining(null);
+    }
+  };
+
+  // Sync reading/listening progress to backend
+  useEffect(() => {
+    const docIdToSync = audioDoc?.id || selectedDocId;
+    if (docIdToSync && activeBlockId !== null) {
+      fetch(`/api/documents/${docIdToSync}/progress`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ last_block_index: activeBlockId })
+      }).catch(() => {});
+    }
+  }, [audioDoc?.id, selectedDocId, activeBlockId]);
+
   // When activeBlockId, voice, model, or speed changes, update audio source ONLY if playing or already loaded
   useEffect(() => {
-    if (!selectedDocId || activeBlockId === null) return;
-    if (!isPlaying && !currentAudioSrc) return; // Do not fetch or generate audio until user initiates playback
+    const targetDocId = audioDoc?.id || selectedDocId;
+    if (!targetDocId || activeBlockId === null) return;
+    if (!isPlaying && !currentAudioSrc) return; // Do not fetch until user initiates playback
 
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
-    const src = `/api/documents/${selectedDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
+    const src = `/api/documents/${targetDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
     setCurrentAudioSrc(src);
     setIsLoadingAudio(true);
     audioEl.src = src;
@@ -123,15 +179,16 @@ export default function App() {
         playPromise.catch(() => {});
       }
     }
-  }, [selectedDocId, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying, currentAudioSrc]);
+  }, [selectedDocId, audioDoc?.id, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying, currentAudioSrc]);
 
   // Lookahead sliding window prefetch for blocks N+1 and N+2 (priority 5)
   useEffect(() => {
-    if (!selectedDocId || activeBlockId === null) return;
+    const targetDocId = audioDoc?.id || selectedDocId;
+    if (!targetDocId || activeBlockId === null) return;
 
     // Save reading progress in localStorage
     try {
-      localStorage.setItem(`read_progress_${selectedDocId}`, activeBlockId.toString());
+      localStorage.setItem(`read_progress_${targetDocId}`, activeBlockId.toString());
     } catch {
       // ignore
     }
@@ -143,7 +200,7 @@ export default function App() {
 
     if (next1 < totalBlocks) {
       priorityAudioQueue.enqueue({
-        docId: selectedDocId,
+        docId: targetDocId,
         blockId: next1,
         voice: selectedVoice,
         model: selectedModel,
@@ -153,7 +210,7 @@ export default function App() {
     }
     if (next2 < totalBlocks) {
       priorityAudioQueue.enqueue({
-        docId: selectedDocId,
+        docId: targetDocId,
         blockId: next2,
         voice: selectedVoice,
         model: selectedModel,
@@ -161,7 +218,7 @@ export default function App() {
         priority: 5,
       });
     }
-  }, [selectedDocId, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel, playbackSpeed]);
+  }, [selectedDocId, audioDoc?.id, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel, playbackSpeed]);
 
   const handleTogglePlay = () => {
     const audioEl = audioRef.current;
@@ -171,9 +228,10 @@ export default function App() {
       audioEl.pause();
       setIsPlaying(false);
     } else {
+      const targetDocId = selectedDocId || audioDoc?.id;
       // If audio element doesn't have src yet, assign it now
-      if (!currentAudioSrc && selectedDocId) {
-        const src = `/api/documents/${selectedDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
+      if (!currentAudioSrc && targetDocId) {
+        const src = `/api/documents/${targetDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
         setCurrentAudioSrc(src);
         setIsLoadingAudio(true);
         audioEl.src = src;
@@ -229,7 +287,6 @@ export default function App() {
   };
 
   const handleOpenDocument = async (id) => {
-    // Reset to default model & voice configured in settings every time a note is opened
     try {
       const res = await fetch('/api/settings');
       if (res.ok) {
@@ -244,25 +301,45 @@ export default function App() {
     }
 
     setSelectedDocId(id);
-    setActiveBlockId(0);
-    setIsPlaying(false);
-    setCurrentAudioSrc('');
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
+
+    // If opening a different document than active audio session, load its details and resume position
+    if (!audioDoc || audioDoc.id !== id) {
+      try {
+        const docRes = await fetch(`/api/documents/${id}`);
+        if (docRes.ok) {
+          const docData = await docRes.json();
+          const docTitle = docData.meta?.title || 'Document';
+          const blocksCount = docData.chunks?.length || 0;
+          const resumeIndex = docData.meta?.last_block_index || 0;
+          setAudioDoc({ id, title: docTitle, totalBlocks: blocksCount });
+          setTotalBlocks(blocksCount);
+          setActiveBlockId(resumeIndex);
+        }
+      } catch {
+        // fallback
+      }
+      setIsPlaying(false);
+      setCurrentAudioSrc('');
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
     }
   };
 
   const handleBackToLibrary = () => {
+    // Return to library while preserving background audio session and mini player
     setSelectedDocId(null);
-    setActiveBlockId(0);
-    setTotalBlocks(0);
+  };
+
+  const handleDismissMiniPlayer = () => {
     setIsPlaying(false);
-    setCurrentAudioSrc('');
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
     }
+    setAudioDoc(null);
+    setCurrentAudioSrc('');
   };
 
   return (
@@ -284,6 +361,12 @@ export default function App() {
           // Handled in onEnded or user toggle
         }}
         onEnded={() => {
+          if (sleepTimer === 'end_of_doc' && activeBlockId >= totalBlocks - 1) {
+            setIsPlaying(false);
+            setSleepTimer(null);
+            setSleepTimerRemaining(null);
+            return;
+          }
           if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
             setActiveBlockId((prev) => prev + 1);
             setIsPlaying(true);
@@ -342,6 +425,9 @@ export default function App() {
             playbackSpeed={playbackSpeed}
             selectedVoice={selectedVoice}
             selectedModel={selectedModel}
+            sleepTimer={sleepTimer}
+            onSetSleepTimer={handleSetSleepTimer}
+            sleepTimerRemaining={sleepTimerRemaining}
             onTogglePlay={handleTogglePlay}
             onSeek={handleSeek}
             onSpeedChange={handleSpeedChange}
@@ -358,6 +444,25 @@ export default function App() {
           onSelectDocument={handleOpenDocument}
           onEditDocument={(id) => setEditingDocId(id)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+        />
+      )}
+
+      {/* Persistent Global Floating Mini-Player when browsing library or editing */}
+      {!selectedDocId && audioDoc && (currentAudioSrc || isPlaying) && (
+        <MiniPlayer
+          docTitle={audioDoc.title}
+          currentBlock={activeBlockId}
+          totalBlocks={totalBlocks}
+          isPlaying={isPlaying}
+          isLoadingAudio={isLoadingAudio}
+          playbackSpeed={playbackSpeed}
+          sleepTimerRemaining={sleepTimerRemaining}
+          onTogglePlay={handleTogglePlay}
+          onPrevBlock={handlePrevBlock}
+          onNextBlock={handleNextBlock}
+          onSpeedChange={handleSpeedChange}
+          onOpenReader={() => setSelectedDocId(audioDoc.id)}
+          onDismiss={handleDismissMiniPlayer}
         />
       )}
 

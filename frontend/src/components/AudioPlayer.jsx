@@ -15,7 +15,8 @@ import {
   Globe2,
   Sparkles,
   Download,
-  Star
+  Star,
+  Moon
 } from 'lucide-react';
 import { priorityAudioQueue } from '../utils/priorityAudioQueue';
 
@@ -39,8 +40,12 @@ export default function AudioPlayer({
   onPrevBlock,
   currentTime = 0,
   duration = 0,
+  sleepTimer = null,
+  onSetSleepTimer,
+  sleepTimerRemaining = null,
 }) {
   const [showModelModal, setShowModelModal] = useState(false);
+  const [showSleepMenu, setShowSleepMenu] = useState(false);
   const [voices, setVoices] = useState([]);
   const [voiceSearchQuery, setVoiceSearchQuery] = useState('');
   
@@ -396,6 +401,60 @@ export default function AudioPlayer({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Sleep timer button */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowSleepMenu(!showSleepMenu)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                    sleepTimer
+                      ? 'bg-amber-950/40 border-amber-600/50 text-amber-300'
+                      : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title="Sleep Timer"
+                >
+                  <Moon className={`w-3.5 h-3.5 ${sleepTimer ? 'text-amber-400 fill-amber-400' : ''}`} />
+                  {sleepTimerRemaining !== null && sleepTimerRemaining > 0 ? (
+                    <span className="font-mono text-[11px] font-semibold">
+                      {Math.floor(sleepTimerRemaining / 60)}:{(sleepTimerRemaining % 60).toString().padStart(2, '0')}
+                    </span>
+                  ) : (
+                    <span className="hidden xl:inline">Timer</span>
+                  )}
+                </button>
+
+                {showSleepMenu && (
+                  <div className="absolute bottom-full mb-2 right-0 bg-zinc-900 border border-zinc-800 rounded-xl p-1 shadow-2xl z-50 flex flex-col gap-0.5 min-w-36 text-xs">
+                    <div className="px-2 py-1 text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Sleep Timer</div>
+                    {[
+                      { label: 'Off', val: null },
+                      { label: '15 minutes', val: 15 },
+                      { label: '30 minutes', val: 30 },
+                      { label: '45 minutes', val: 45 },
+                      { label: '60 minutes', val: 60 },
+                      { label: 'End of Document', val: 'end_of_doc' }
+                    ].map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => {
+                          if (onSetSleepTimer) onSetSleepTimer(item.val);
+                          setShowSleepMenu(false);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer ${
+                          sleepTimer === item.val
+                            ? 'bg-indigo-600 text-white font-medium'
+                            : 'hover:bg-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        <span>{item.label}</span>
+                        {sleepTimer === item.val && <Check className="w-3.5 h-3.5 text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Model & Voice Dropdown Trigger */}
