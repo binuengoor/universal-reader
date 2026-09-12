@@ -115,3 +115,11 @@
 - [x] Add unit tests for inter-block pause settings and heading navigation.
 - [x] Build, verify end-to-end, commit, push, and deploy to `oracle-xmillionmax`.
 
+## Phase 15: TTS Sanitization Hardening, Universal Theme Control & PWA Cache Busting
+- [x] Strip horizontal rules (`---`) and stray hash characters (`#`) unconditionally from TTS speech text.
+- [x] Fix audio synthesis route so `clean_text_for_speech` is always enforced on block audio synthesis even if pre-populated in `chunks.json`.
+- [x] Add global Theme / Display Options button (`Aa`) across all views: Library View (home), Document Editor, and Reader View.
+- [x] Make Table of Contents (Chapters) button permanently visible in Reader View with guided empty state when headings are missing.
+- [x] Fix PWA Service Worker caching by switching HTML navigation to strict Network-First, bumping cache version to `v3`, adding `Cache-Control: no-cache` for entry files, and clearing stale audio disk caches on server.
+
+
