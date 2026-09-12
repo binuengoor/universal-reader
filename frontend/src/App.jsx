@@ -13,6 +13,7 @@ export default function App() {
   const [editingDocId, setEditingDocId] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [settingsVersion, setSettingsVersion] = useState(0);
 
   // Web Share Target initial intake state
   const [shareData, setShareData] = useState(() => {
@@ -545,6 +546,7 @@ export default function App() {
             onPrevBlock={handlePrevBlock}
             currentTime={currentTime}
             duration={duration}
+            settingsVersion={settingsVersion}
           />
         </>
       ) : (
@@ -582,6 +584,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSettingsUpdated={(settings) => {
+          setSettingsVersion((v) => v + 1);
           if (settings && settings.tts_default_model) {
             setSelectedModel(settings.tts_default_model);
           }

@@ -2,10 +2,9 @@ import os
 import json
 from typing import Dict, Any
 
-CONFIG_FILE = os.environ.get(
-    "CONFIG_FILE",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "config.json"))
-)
+# Prefer persistent /data volume if present, otherwise local data directory
+DEFAULT_CONFIG_PATH = "/data/config.json" if os.path.isdir("/data") else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "config.json"))
+CONFIG_FILE = os.environ.get("CONFIG_FILE", DEFAULT_CONFIG_PATH)
 
 def load_settings() -> Dict[str, Any]:
     """Load application settings from config.json with env fallback."""
@@ -23,6 +22,19 @@ def load_settings() -> Dict[str, Any]:
         "llm_clean_enabled": False,
         "glossary": [],
     }
+    # If CONFIG_FILE does not exist, check if legacy local path exists and copy over
+    if not os.path.exists(CONFIG_FILE):
+        legacy_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "config.json"))
+        if legacy_path != CONFIG_FILE and os.path.exists(legacy_path):
+            try:
+                with open(legacy_path, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                    json.dump(saved, f, indent=2)
+            except Exception:
+                pass
+
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:

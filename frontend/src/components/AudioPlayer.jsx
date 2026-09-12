@@ -43,6 +43,7 @@ export default function AudioPlayer({
   sleepTimer = null,
   onSetSleepTimer,
   sleepTimerRemaining = null,
+  settingsVersion = 0,
 }) {
   const [showModelModal, setShowModelModal] = useState(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
@@ -55,6 +56,7 @@ export default function AudioPlayer({
 
   // Scoped Voices & Favorites
   const [scopedVoices, setScopedVoices] = useState([]);
+  const [scopedVoicesEnabled, setScopedVoicesEnabled] = useState(false);
   const [onlyShowFavorites, setOnlyShowFavorites] = useState(false);
 
 
@@ -89,6 +91,8 @@ export default function AudioPlayer({
             setScopedVoicesEnabled(enabled);
             if (enabled && list.length > 0) {
               setOnlyShowFavorites(true);
+            } else if (!enabled) {
+              setOnlyShowFavorites(false);
             }
           }
         }
@@ -121,7 +125,7 @@ export default function AudioPlayer({
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [settingsVersion]);
 
 
   const availableEngines = useMemo(() => {
