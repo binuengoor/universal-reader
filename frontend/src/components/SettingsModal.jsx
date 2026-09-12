@@ -166,7 +166,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
       });
 
       await fetchTagsData();
-      if (onSettingsUpdated) onSettingsUpdated();
+      if (onSettingsUpdated) onSettingsUpdated(settings);
     } catch (err) {
       setJobResult({
         success: false,
@@ -206,7 +206,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
       setRenameOldTag('');
       setRenameNewTag('');
       await fetchTagsData();
-      if (onSettingsUpdated) onSettingsUpdated();
+      if (onSettingsUpdated) onSettingsUpdated(settings);
     } catch (err) {
       setTagOpMessage({
         success: false,

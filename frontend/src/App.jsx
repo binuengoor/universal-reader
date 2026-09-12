@@ -366,10 +366,10 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSettingsUpdated={(settings) => {
-          if (settings.tts_default_model) {
+          if (settings && settings.tts_default_model) {
             setSelectedModel(settings.tts_default_model);
           }
-          if (settings.tts_default_voice) {
+          if (settings && settings.tts_default_voice) {
             setSelectedVoice(settings.tts_default_voice);
           }
         }}
