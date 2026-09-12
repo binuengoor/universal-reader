@@ -984,48 +984,41 @@ async def run_batch_llm_job(req: BatchLlmRequest):
             modified = False
             result_item = {"id": doc_id, "title": meta.get("title")}
 
-            # 1. Title generation
-            if req.job_type in ("title", "all"):
-                curr_title = meta.get("title", "")
-                is_default_title = curr_title.startswith("Doc - ") or curr_title.startswith("Web - ")
-                should_run_title = req.overwrite or (
-                    llm_state.get("title_hash") != content_hash and (is_default_title or not curr_title)
-                )
-                if should_run_title:
-                    all_tags = get_all_library_tags()
-                    new_title, _ = await llm_generate_title_and_tags(
-                        content=content,
-                        existing_tags=all_tags,
-                        llm_base_url=llm_base,
-                        llm_api_key=llm_key,
-                        llm_model=llm_model
-                    )
-                    if new_title:
-                        meta["title"] = new_title
-                        result_item["new_title"] = new_title
-                        llm_state["title_hash"] = content_hash
-                        modified = True
+            # 1 & 2. Title and Tag generation
+            need_title = req.job_type in ("title", "all")
+            need_tags = req.job_type in ("tags", "all")
 
-            # 2. Tag generation with 50-tag limit
-            if req.job_type in ("tags", "all"):
-                curr_tags = meta.get("tags", [])
-                should_run_tags = req.overwrite or (
-                    llm_state.get("tags_hash") != content_hash and not curr_tags
+            curr_title = meta.get("title", "")
+            is_default_title = curr_title.startswith("Doc - ") or curr_title.startswith("Web - ")
+            should_run_title = need_title and (
+                req.overwrite or (llm_state.get("title_hash") != content_hash and (is_default_title or not curr_title))
+            )
+
+            curr_tags = meta.get("tags", [])
+            should_run_tags = need_tags and (
+                req.overwrite or (llm_state.get("tags_hash") != content_hash and not curr_tags)
+            )
+
+            if should_run_title or should_run_tags:
+                all_tags = get_all_library_tags()
+                new_title, new_tags = await llm_generate_title_and_tags(
+                    content=content,
+                    existing_tags=all_tags,
+                    llm_base_url=llm_base,
+                    llm_api_key=llm_key,
+                    llm_model=llm_model
                 )
-                if should_run_tags:
-                    all_tags = get_all_library_tags()
-                    _, new_tags = await llm_generate_title_and_tags(
-                        content=content,
-                        existing_tags=all_tags,
-                        llm_base_url=llm_base,
-                        llm_api_key=llm_key,
-                        llm_model=llm_model
-                    )
-                    if new_tags:
-                        meta["tags"] = new_tags
-                        result_item["new_tags"] = new_tags
-                        llm_state["tags_hash"] = content_hash
-                        modified = True
+                if should_run_title and new_title:
+                    meta["title"] = new_title
+                    result_item["new_title"] = new_title
+                    llm_state["title_hash"] = content_hash
+                    modified = True
+
+                if should_run_tags and new_tags:
+                    meta["tags"] = new_tags
+                    result_item["new_tags"] = new_tags
+                    llm_state["tags_hash"] = content_hash
+                    modified = True
 
             # 3. Clean text re-chunking
             if req.job_type in ("clean_text", "all") and os.path.exists(chunks_path):
