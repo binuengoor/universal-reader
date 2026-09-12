@@ -579,7 +579,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
             <span className="text-xs">Loading settings...</span>
           </div>
         ) : (
-          <form onSubmit={handleSave} className="space-y-4">
+          <form onSubmit={handleSave} noValidate className="space-y-4">
             {error && (
               <div className="p-3 bg-red-950/50 border border-red-800 rounded-xl text-xs text-red-300 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
@@ -621,7 +621,6 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                   </label>
                   <input
                     type="text"
-                    required
                     placeholder="https://kokoro.askbp.win"
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
@@ -936,16 +935,13 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                       className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 font-mono cursor-pointer"
                     />
                     <datalist id="llm-models-list">
-                      <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Groq / Fast & High Quality)</option>
-                      <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Groq / Ultra Fast)</option>
-                      <option value="mixtral-8x7b-32768">mixtral-8x7b-32768 (Groq)</option>
-                      <option value="qwen/qwen3.8-27b">qwen/qwen3.8-27b (Cerebras)</option>
-                      <option value="llama3.1-70b">llama3.1-70b (Cerebras)</option>
-                      <option value="llama3.1-8b">llama3.1-8b (Cerebras)</option>
+                      <option value="qwen/qwen3.8-27b">qwen/qwen3.8-27b (Groq / Ultra Fast - Recommended)</option>
+                      <option value="groq/compound">groq/compound (Groq Multi-Agent)</option>
+                      <option value="groq/compound-mini">groq/compound-mini (Groq Fast)</option>
+                      <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (Groq High Quality)</option>
                       <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
                       <option value="gpt-4o">gpt-4o (OpenAI Flagship)</option>
-                      <option value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b (Groq reasoning)</option>
-                      <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet (Anthropic proxy)</option>
+                      <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet (Anthropic)</option>
                     </datalist>
                   </div>
                 </div>

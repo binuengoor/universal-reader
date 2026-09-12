@@ -1,7 +1,10 @@
 import re
 import json
+import logging
 import httpx
 from typing import Optional, Dict, Any, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Regex patterns for speech cleanup
 # 1. Emojis and miscellaneous symbols/pictographs
@@ -204,8 +207,10 @@ async def llm_clean_text(
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 if content.strip():
                     return clean_text_for_speech(content.strip())
-    except Exception:
-        pass
+            else:
+                logger.warning(f"llm_clean_text failed with HTTP {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"llm_clean_text error: {str(e)}")
 
     return regex_cleaned
 
@@ -310,7 +315,9 @@ async def llm_generate_title_and_tags(
                         clean_tags.append(norm)
 
                 return clean_title, clean_tags[:3]
-    except Exception:
-        pass
+            else:
+                logger.warning(f"llm_generate_title_and_tags failed HTTP {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"llm_generate_title_and_tags error: {str(e)}")
 
     return None, []
