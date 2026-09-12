@@ -66,6 +66,7 @@ export default function App() {
       return 'edge-tts';
     }
   });
+  const [interBlockPauseMs, setInterBlockPauseMs] = useState(300);
 
   const audioRef = useRef(null);
 
@@ -87,6 +88,9 @@ export default function App() {
             setSelectedVoice(() => {
               return localStorage.getItem('universal_reader_voice') || voice;
             });
+          }
+          if (data.inter_block_pause_ms !== undefined) {
+            setInterBlockPauseMs(Number(data.inter_block_pause_ms));
           }
 
         }
@@ -568,8 +572,15 @@ export default function App() {
             return;
           }
           if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
-            setActiveBlockId((prev) => prev + 1);
-            setIsPlaying(true);
+            if (interBlockPauseMs > 0) {
+              setTimeout(() => {
+                setActiveBlockId((prev) => prev + 1);
+                setIsPlaying(true);
+              }, interBlockPauseMs);
+            } else {
+              setActiveBlockId((prev) => prev + 1);
+              setIsPlaying(true);
+            }
           } else {
             setIsPlaying(false);
           }
@@ -686,7 +697,11 @@ export default function App() {
           if (settings && settings.tts_default_voice) {
             setSelectedVoice(settings.tts_default_voice);
           }
+          if (settings && settings.inter_block_pause_ms !== undefined) {
+            setInterBlockPauseMs(Number(settings.inter_block_pause_ms));
+          }
         }}
+        theme={readerSettings.theme}
       />
 
       {/* Keyboard Shortcuts HUD Modal */}

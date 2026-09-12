@@ -21,6 +21,7 @@ def load_settings() -> Dict[str, Any]:
         "llm_prompt": os.environ.get("LLM_PROMPT", ""),
         "llm_clean_enabled": False,
         "glossary": [],
+        "inter_block_pause_ms": int(os.environ.get("INTER_BLOCK_PAUSE_MS", 300)),
     }
     # If CONFIG_FILE does not exist, check if legacy local path exists and copy over
     if not os.path.exists(CONFIG_FILE):
@@ -47,6 +48,10 @@ def load_settings() -> Dict[str, Any]:
     # Populate compatible alias fields
     settings["tts_default_model"] = settings.get("tts_default_model") or settings.get("default_model", "edge-tts")
     settings["tts_default_voice"] = settings.get("tts_default_voice") or settings.get("default_voice", "en-US-ChristopherNeural")
+    try:
+        settings["inter_block_pause_ms"] = int(settings.get("inter_block_pause_ms", 300))
+    except (ValueError, TypeError):
+        settings["inter_block_pause_ms"] = 300
     if not isinstance(settings.get("scoped_voices"), list):
         settings["scoped_voices"] = []
     settings["scoped_voices_enabled"] = bool(settings.get("scoped_voices_enabled", False))

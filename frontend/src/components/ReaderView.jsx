@@ -13,11 +13,13 @@ import {
   FileEdit,
   Tag,
   Clock,
-  LocateFixed
+  LocateFixed,
+  List
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import DisplaySettingsDrawer from './DisplaySettingsDrawer';
+import { getTheme } from '../utils/theme';
 
 export default function ReaderView({
   docId,
@@ -29,7 +31,9 @@ export default function ReaderView({
   settings = { theme: 'dark', fontSize: 18, lineHeight: 1.7, fontFamily: 'serif' },
   onUpdateSettings,
 }) {
+  const t = getTheme(settings.theme);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isTocOpen, setIsTocOpen] = useState(false);
   const [docData, setDocData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -83,6 +87,29 @@ export default function ReaderView({
   }, [searchQuery, docData]);
 
   const safeMatchIdx = matchingBlockIds.length > 0 ? Math.min(currentMatchIdx, matchingBlockIds.length - 1) : 0;
+
+  // Extract Table of Contents from markdown headings (#, ##, ###, ####)
+  const tocItems = useMemo(() => {
+    if (!docData?.chunks) return [];
+    const items = [];
+    const headingRegex = /^(#{1,4})\s+(.+)$/m;
+
+    docData.chunks.forEach((chunk) => {
+      const match = headingRegex.exec(chunk.text);
+      if (match) {
+        const level = match[1].length;
+        const rawHeading = match[2].trim();
+        const cleanTitle = rawHeading.replace(/[*_`]/g, '').trim();
+        items.push({
+          blockId: chunk.id,
+          level,
+          title: cleanTitle,
+        });
+      }
+    });
+
+    return items;
+  }, [docData?.chunks]);
 
   // Auto-scroll to current search match
   useEffect(() => {
@@ -146,15 +173,19 @@ export default function ReaderView({
   // Smooth scroll to active block helper
   const scrollToActiveBlock = (smooth = true) => {
     if (activeBlockId !== null && activeBlockId !== undefined) {
-      const el = document.querySelector(`[data-block-id="${activeBlockId}"]`);
-      if (el) {
-        isProgrammaticScrollRef.current = true;
-        el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
-        setIsScrolledAway(false);
-        setTimeout(() => {
-          isProgrammaticScrollRef.current = false;
-        }, 650);
-      }
+      scrollToBlock(activeBlockId, smooth);
+    }
+  };
+
+  const scrollToBlock = (blockId, smooth = true) => {
+    const el = document.querySelector(`[data-block-id="${blockId}"]`);
+    if (el) {
+      isProgrammaticScrollRef.current = true;
+      el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+      setIsScrolledAway(false);
+      setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 650);
     }
   };
 
@@ -374,6 +405,20 @@ export default function ReaderView({
 
         {/* Header Right Actions */}
         <div className="flex items-center gap-2">
+          {tocItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsTocOpen((prev) => !prev)}
+              className={`p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer ${
+                isTocOpen ? 'bg-indigo-600/20 text-indigo-500 dark:text-indigo-300' : ''
+              }`}
+              title="Table of Contents (Chapters)"
+            >
+              <List className="w-4 h-4 text-indigo-400" />
+              <span className="hidden sm:inline">Chapters ({tocItems.length})</span>
+            </button>
+          )}
+
           {!showSearch && (
             <button
               onClick={() => {
@@ -590,6 +635,72 @@ export default function ReaderView({
             <LocateFixed className="w-3.5 h-3.5 animate-pulse" />
             <span>Follow along paused • Jump to Block {activeBlockId + 1}</span>
           </button>
+        </div>
+      )}
+
+      {/* Table of Contents Drawer */}
+      {isTocOpen && (
+        <div className={`fixed inset-0 z-50 flex justify-start ${t.modalBackdrop} transition-opacity`}>
+          <div className="absolute inset-0" onClick={() => setIsTocOpen(false)} />
+          <div className={`relative w-full max-w-sm h-full ${t.modalSurface} border-r p-6 shadow-2xl flex flex-col justify-between overflow-y-auto z-10 animate-in slide-in-from-left duration-200`}>
+            <div className="space-y-4">
+              <div className={`flex items-center justify-between border-b ${t.divider} pb-4`}>
+                <div className="flex items-center gap-2">
+                  <List className="w-5 h-5 text-indigo-500" />
+                  <div>
+                    <h2 className={`font-semibold text-base ${t.cardTitle}`}>Table of Contents</h2>
+                    <p className={`text-[11px] ${t.cardMeta}`}>{tocItems.length} chapters & sections</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTocOpen(false)}
+                  className={`p-1 rounded-lg ${t.iconMuted} hover:opacity-100 transition cursor-pointer`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1 overflow-y-auto max-h-[calc(100vh-160px)] pr-1">
+                {tocItems.map((item, idx) => {
+                  const nextItem = tocItems[idx + 1];
+                  const isCurrentChapter = activeBlockId !== null && 
+                    activeBlockId >= item.blockId && 
+                    (!nextItem || activeBlockId < nextItem.blockId);
+
+                  return (
+                    <button
+                      key={`${item.blockId}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        scrollToBlock(item.blockId);
+                        setIsTocOpen(false);
+                      }}
+                      className={`w-full text-left py-2 px-2.5 rounded-lg transition cursor-pointer flex items-center justify-between gap-2 border ${
+                        isCurrentChapter
+                          ? 'bg-indigo-600/20 border-indigo-500 font-semibold text-indigo-500 dark:text-indigo-300'
+                          : `border-transparent ${t.playerPopoverItem}`
+                      }`}
+                      style={{
+                        paddingLeft: `${Math.max(0.6, (item.level - 1) * 0.9 + 0.6)}rem`,
+                      }}
+                    >
+                      <span className={`truncate text-xs ${item.level === 1 ? 'font-bold' : item.level === 2 ? 'font-semibold' : 'font-normal'}`}>
+                        {item.title}
+                      </span>
+                      <span className={`text-[10px] font-mono shrink-0 px-1.5 py-0.2 rounded ${t.badge}`}>
+                        B{item.blockId + 1}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className={`pt-4 border-t ${t.divider} text-center text-xs ${t.cardMeta}`}>
+              Click to jump directly to section
+            </div>
+          </div>
         </div>
       )}
 

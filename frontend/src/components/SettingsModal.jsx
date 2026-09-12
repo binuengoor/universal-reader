@@ -17,11 +17,14 @@ import {
   RefreshCw,
   BookOpen,
   Plus,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
+import { getTheme } from '../utils/theme';
 
 
-export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
+export default function SettingsModal({ isOpen, onClose, onSettingsUpdated, theme = 'dark' }) {
+  const t = getTheme(theme);
   const [activeTab, setActiveTab] = useState('tts'); // 'tts' | 'scoped' | 'llm'
 
   // TTS Settings
@@ -34,6 +37,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   // Scoped Voices
   const [scopedVoices, setScopedVoices] = useState([]);
   const [scopedVoicesEnabled, setScopedVoicesEnabled] = useState(false);
+  const [interBlockPauseMs, setInterBlockPauseMs] = useState(300);
   const [availableVoices, setAvailableVoices] = useState([]);
   const [voiceFilterSearch, setVoiceFilterSearch] = useState('');
 
@@ -230,6 +234,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
           setDefaultVoice(data.tts_default_voice || 'en-US-ChristopherNeural');
           setScopedVoices(Array.isArray(data.scoped_voices) ? data.scoped_voices : []);
           setScopedVoicesEnabled(Boolean(data.scoped_voices_enabled));
+          setInterBlockPauseMs(data.inter_block_pause_ms !== undefined ? Number(data.inter_block_pause_ms) : 300);
 
           setLlmBaseUrl(data.llm_base_url || '');
           setLlmApiKey(data.llm_api_key || '');
@@ -451,6 +456,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
           tts_default_voice: defaultVoice,
           scoped_voices: scopedVoices,
           scoped_voices_enabled: scopedVoicesEnabled,
+          inter_block_pause_ms: interBlockPauseMs,
           llm_base_url: llmBaseUrl.trim(),
           llm_api_key: llmApiKey.trim(),
           llm_model: llmModel.trim(),
@@ -706,6 +712,49 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                       )}
                     </select>
                   </div>
+                </div>
+
+                {/* Inter-block Natural Pause Slider */}
+                <div className={`p-3 rounded-xl border ${t.card}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className={`text-xs font-medium flex items-center gap-1.5 ${t.cardTitle}`}>
+                      <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                      Inter-Block Natural Pause
+                    </label>
+                    <span className="text-xs font-mono font-semibold text-indigo-500 dark:text-indigo-400">
+                      {interBlockPauseMs} ms ({interBlockPauseMs === 0 ? 'Instant' : `${(interBlockPauseMs / 1000).toFixed(1)}s`})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1500"
+                      step="100"
+                      value={interBlockPauseMs}
+                      onChange={(e) => setInterBlockPauseMs(Number(e.target.value))}
+                      className="flex-1 accent-indigo-600 cursor-pointer"
+                    />
+                    <div className="flex gap-1 shrink-0">
+                      {[0, 200, 400, 800].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setInterBlockPauseMs(preset)}
+                          className={`px-1.5 py-0.5 text-[10px] rounded border transition cursor-pointer ${
+                            interBlockPauseMs === preset
+                              ? 'bg-indigo-600 border-indigo-500 text-white font-medium'
+                              : `${t.btnSecondary}`
+                          }`}
+                        >
+                          {preset}ms
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className={`text-[11px] ${t.cardMeta} mt-1.5 leading-normal`}>
+                    Silence buffer inserted between blocks during continuous playback for a natural conversational cadence.
+                  </p>
                 </div>
 
                 <div className="pt-2">

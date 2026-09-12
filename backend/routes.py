@@ -134,6 +134,7 @@ class SettingsPayload(BaseModel):
     llm_prompt: Optional[str] = None
     llm_clean_enabled: Optional[bool] = None
     glossary: Optional[List[Dict[str, Any]]] = None
+    inter_block_pause_ms: Optional[int] = None
 
 @settings_router.get("")
 async def get_app_settings():

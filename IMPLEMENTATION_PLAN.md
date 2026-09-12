@@ -110,8 +110,8 @@
 - [x] Validate with frontend test/build, commit, push, and deploy to `oracle-xmillionmax`.
 
 ## Phase 14: Chapter Navigation (Table of Contents) & Playback Timing Customization (Option B)
-- [ ] Implement Table of Contents parser in frontend to extract headings (`#`, `##`, `###`) and render a jump-to-chapter drawer/menu.
-- [ ] Implement configurable inter-block pause / silence buffer in `backend/config.py` and frontend playback loop in `App.jsx`.
-- [ ] Add unit tests for inter-block pause settings and heading navigation.
-- [ ] Build, verify end-to-end, commit, push, and deploy to `oracle-xmillionmax`.
+- [x] Implement Table of Contents parser in frontend to extract headings (`#`, `##`, `###`) and render a jump-to-chapter drawer/menu.
+- [x] Implement configurable inter-block pause / silence buffer in `backend/config.py` and frontend playback loop in `App.jsx`.
+- [x] Add unit tests for inter-block pause settings and heading navigation.
+- [x] Build, verify end-to-end, commit, push, and deploy to `oracle-xmillionmax`.
 
