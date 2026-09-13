@@ -131,4 +131,11 @@
 - [x] Update `LibraryView.jsx` to render high-value note synopses on cards, and add "Generate Synopses" batch trigger in `SettingsModal.jsx`.
 - [x] Validate changes via automated tests, build, commit, push, and deploy to `oracle-xmillionmax`.
 
+## Phase 17: Unified Omni-Intake (Clipboard Files, Drag & Drop, URL & Text Auto-Detection)
+- [x] Create `OmniIntakeModal.jsx` supporting clipboard file paste, drag & drop, URL auto-detection, raw text paste, and manual file browse fallback.
+- [x] Refactor `LibraryView.jsx` to replace the three separate intake buttons with a single prominent `+ Add Document` action triggering `OmniIntakeModal`.
+- [x] Integrate title override, category `TagInput`, and mode switching with theme tokens.
+- [x] Validate with backend tests, frontend build, commit, push, and deploy to `oracle-xmillionmax`.
+
+
 

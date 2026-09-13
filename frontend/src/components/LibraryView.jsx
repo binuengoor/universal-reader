@@ -27,6 +27,7 @@ import {
   Type
 } from 'lucide-react';
 import TagInput from './TagInput';
+import OmniIntakeModal from './OmniIntakeModal';
 import { getTheme } from '../utils/theme';
 
 export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSettings, onOpenShortcuts, onOpenDisplaySettings, initialShareData, onClearShareData, theme = 'dark' }) {
@@ -97,33 +98,15 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   const [selectedDocIds, setSelectedDocIds] = useState(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
-  // Intake modals
-  const [activeModal, setActiveModal] = useState(null); // 'upload' | 'url' | 'scratch'
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [modalError, setModalError] = useState(null);
-
-  // Form states
-  const [fileToUpload, setFileToUpload] = useState(null);
-  const [customTitle, setCustomTitle] = useState('');
-  const [urlInput, setUrlInput] = useState('');
-  const [scratchContent, setScratchContent] = useState('');
-  const [modalTags, setModalTags] = useState([]);
+  // Consolidated Omni-Intake modal
+  const [isOmniModalOpen, setIsOmniModalOpen] = useState(false);
 
   // Handle incoming web share data
   useEffect(() => {
     if (initialShareData) {
-      if (initialShareData.url) {
-        setUrlInput(initialShareData.url);
-        if (initialShareData.title) setCustomTitle(initialShareData.title);
-        setActiveModal('url');
-      } else if (initialShareData.text) {
-        setScratchContent(initialShareData.text);
-        if (initialShareData.title) setCustomTitle(initialShareData.title);
-        setActiveModal('scratch');
-      }
-      if (onClearShareData) onClearShareData();
+      setIsOmniModalOpen(true);
     }
-  }, [initialShareData, onClearShareData]);
+  }, [initialShareData]);
 
   const fetchDocuments = async (showLoading = true) => {
     try {
@@ -275,112 +258,6 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
     }
   };
 
-  const handleUploadSubmit = async (e) => {
-    e.preventDefault();
-    if (!fileToUpload) return;
-
-    setIsSubmitting(true);
-    setModalError(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', fileToUpload);
-      if (customTitle.trim()) {
-        formData.append('title', customTitle.trim());
-      }
-      if (modalTags && modalTags.length > 0) {
-        formData.append('tags', modalTags.join(','));
-      }
-      const res = await fetch('/api/documents/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Upload failed');
-
-      closeModal();
-      await fetchDocuments();
-      if (data.id && onSelectDocument) {
-        onSelectDocument(data.id);
-      }
-    } catch (err) {
-      setModalError(err.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleUrlSubmit = async (e) => {
-    e.preventDefault();
-    if (!urlInput.trim()) return;
-
-    setIsSubmitting(true);
-    setModalError(null);
-    try {
-      const res = await fetch('/api/documents/url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: urlInput.trim(),
-          title: customTitle.trim() || undefined,
-          tags: modalTags.length > 0 ? modalTags : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Extraction failed');
-
-      closeModal();
-      await fetchDocuments();
-      if (data.id && onSelectDocument) {
-        onSelectDocument(data.id);
-      }
-    } catch (err) {
-      setModalError(err.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleScratchSubmit = async (e) => {
-    e.preventDefault();
-    if (!scratchContent.trim()) return;
-
-    setIsSubmitting(true);
-    setModalError(null);
-    try {
-      const res = await fetch('/api/documents/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: scratchContent.trim(),
-          title: customTitle.trim() || undefined,
-          tags: modalTags.length > 0 ? modalTags : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Creation failed');
-
-      closeModal();
-      await fetchDocuments();
-      if (data.id && onSelectDocument) {
-        onSelectDocument(data.id);
-      }
-    } catch (err) {
-      setModalError(err.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const closeModal = () => {
-    setActiveModal(null);
-    setModalError(null);
-    setFileToUpload(null);
-    setCustomTitle('');
-    setUrlInput('');
-    setScratchContent('');
-    setModalTags([]);
-  };
-
   const formatDate = (isoStr) => {
     if (!isoStr) return '';
     try {
@@ -447,34 +324,16 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
             </div>
           </div>
 
-          {/* Quick Intake Actions */}
+          {/* Consolidated Omni-Intake Action */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              onClick={() => setActiveModal('upload')}
-              className={`flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
+              onClick={() => setIsOmniModalOpen(true)}
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold rounded-lg transition shadow-xs cursor-pointer active:scale-95"
+              title="Add Document (Paste file, URL, or notes)"
             >
-              <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">Upload File</span>
-              <span className="inline sm:hidden">Upload</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveModal('url')}
-              className={`flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
-            >
-              <LinkIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
-              <span className="hidden sm:inline">Ingest URL</span>
-              <span className="inline sm:hidden">URL</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveModal('scratch')}
-              className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-medium rounded-lg transition shadow-sm cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">New Text</span>
-              <span className="inline sm:hidden">New</span>
+              <Plus className="w-4 h-4" />
+              <span>Add Document</span>
             </button>
             {onOpenShortcuts && (
               <button
@@ -702,24 +561,10 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setActiveModal('upload')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
+                  onClick={() => setIsOmniModalOpen(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition shadow-md cursor-pointer active:scale-95"
                 >
-                  <Upload className="w-4 h-4" /> Upload Document
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveModal('url')}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition border cursor-pointer ${t.btnSecondary}`}
-                >
-                  <LinkIcon className="w-4 h-4 text-purple-400" /> Ingest Article URL
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveModal('scratch')}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition cursor-pointer"
-                >
-                  <FileText className="w-4 h-4" /> Paste Text
+                  <Plus className="w-4 h-4" /> Add Document
                 </button>
               </div>
             ) : (
@@ -907,235 +752,23 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
         )}
       </main>
 
-      {/* Upload Modal */}
-      {activeModal === 'upload' && (
-        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
-          <div className={`${t.modalSurface} border rounded-2xl max-w-md w-full p-6 shadow-2xl relative`}>
-            <button
-              type="button"
-              onClick={closeModal}
-              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className={`text-lg font-bold mb-1 ${t.cardTitle}`}>Upload Document</h3>
-            <p className={`text-xs mb-4 ${t.cardSnippet}`}>Supported formats: PDF, DOCX, ePub, Markdown (.md), and TXT.</p>
-
-            {modalError && (
-              <div className="mb-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-xs text-red-300">
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleUploadSubmit} className="space-y-4">
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Select File</label>
-                <input
-                  type="file"
-                  required
-                  accept=".pdf,.docx,.epub,.txt,.md"
-                  onChange={(e) => setFileToUpload(e.target.files[0] || null)}
-                  className={`w-full text-xs file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold ${t.input} cursor-pointer`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Optional Title Override</label>
-                <input
-                  type="text"
-                  placeholder="e.g. My Important Article (AI generated if blank)"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Category Tags (Max 50 Global)</label>
-                <TagInput
-                  tags={modalTags}
-                  onChange={setModalTags}
-                  availableTags={allTagsWithCount}
-                  placeholder="Choose or create category (AI generated if blank)..."
-                  theme={theme}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition cursor-pointer ${t.btnSecondary}`}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!fileToUpload || isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition cursor-pointer"
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  Upload & Process
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* URL Modal */}
-      {activeModal === 'url' && (
-        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
-          <div className={`${t.modalSurface} border rounded-2xl max-w-md w-full p-6 shadow-2xl relative`}>
-            <button
-              type="button"
-              onClick={closeModal}
-              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className={`text-lg font-bold mb-1 ${t.cardTitle}`}>Ingest Web Article</h3>
-            <p className={`text-xs mb-4 ${t.cardSnippet}`}>Extract clean article text and metadata via trafilatura.</p>
-
-            {modalError && (
-              <div className="mb-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-xs text-red-300">
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleUrlSubmit} className="space-y-4">
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Article URL</label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://example.com/article"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Optional Title Override</label>
-                <input
-                  type="text"
-                  placeholder="Auto-extracted or AI-generated if blank"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Category Tags (Max 50 Global)</label>
-                <TagInput
-                  tags={modalTags}
-                  onChange={setModalTags}
-                  availableTags={allTagsWithCount}
-                  placeholder="Select or type category (AI generated if blank)..."
-                  theme={theme}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition cursor-pointer ${t.btnSecondary}`}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!urlInput.trim() || isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition cursor-pointer"
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
-                  Fetch & Parse
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Scratchpad Modal */}
-      {activeModal === 'scratch' && (
-        <div className={`fixed inset-0 z-50 ${t.modalBackdrop} flex items-center justify-center p-4`}>
-          <div className={`${t.modalSurface} border rounded-2xl max-w-lg w-full p-6 shadow-2xl relative`}>
-            <button
-              type="button"
-              onClick={closeModal}
-              className={`absolute top-4 right-4 ${t.iconMuted} hover:opacity-100 cursor-pointer`}
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className={`text-lg font-bold mb-1 ${t.cardTitle}`}>Paste or Write Text</h3>
-            <p className={`text-xs mb-4 ${t.cardSnippet}`}>Paste notes, transcripts, or raw text to chunk and listen.</p>
-
-            {modalError && (
-              <div className="mb-4 p-3 bg-red-950/50 border border-red-800 rounded-lg text-xs text-red-300">
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleScratchSubmit} className="space-y-4">
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Title (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Doc title (AI generated if blank)"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-sm ${t.input}`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Category Tags (Max 50 Global)</label>
-                <TagInput
-                  tags={modalTags}
-                  onChange={setModalTags}
-                  availableTags={allTagsWithCount}
-                  placeholder="Select or type category (AI generated if blank)..."
-                  theme={theme}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-medium mb-1 ${t.cardTitle}`}>Text Content</label>
-                <textarea
-                  required
-                  rows={8}
-                  placeholder="Paste your markdown or text here..."
-                  value={scratchContent}
-                  onChange={(e) => setScratchContent(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg text-sm resize-none font-mono ${t.input}`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition cursor-pointer ${t.btnSecondary}`}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!scratchContent.trim() || isSubmitting}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium rounded-lg text-white transition cursor-pointer"
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  Save to Library
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Unified Omni-Intake Modal */}
+      <OmniIntakeModal
+        isOpen={isOmniModalOpen}
+        onClose={() => {
+          setIsOmniModalOpen(false);
+          if (onClearShareData) onClearShareData();
+        }}
+        onSuccess={async (newDocId) => {
+          await fetchDocuments();
+          if (newDocId && onSelectDocument) {
+            onSelectDocument(newDocId);
+          }
+        }}
+        availableTags={allTagsWithCount}
+        initialShareData={initialShareData}
+        theme={theme}
+      />
     </div>
   );
 }
