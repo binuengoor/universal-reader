@@ -1094,6 +1094,23 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated, them
 
                     <button
                       type="button"
+                      onClick={() => handleRunBatchJob('synopsis')}
+                      disabled={jobRunning || !llmBaseUrl}
+                      className="p-3 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 rounded-xl text-left transition disabled:opacity-50 flex flex-col gap-1 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-zinc-100">Card Synopses</span>
+                        {jobRunning && activeJob === 'synopsis' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        ) : (
+                          <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400">Generate punchy 1-2 sentence card previews.</p>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleRunBatchJob('clean_text')}
                       disabled={jobRunning || !llmBaseUrl}
                       className="p-3 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 rounded-xl text-left transition disabled:opacity-50 flex flex-col gap-1 cursor-pointer"

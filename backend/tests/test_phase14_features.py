@@ -62,3 +62,34 @@ All done."""
     assert "|" not in table_cleaned
 
 
+@pytest.mark.anyio
+async def test_llm_generate_synopsis_mock(monkeypatch):
+    from backend.cleaner import llm_generate_synopsis
+    import httpx
+
+    class MockResponse:
+        status_code = 200
+        def json(self):
+            return {
+                "choices": [{
+                    "message": {
+                        "content": "A compelling overview of domain-driven personal knowledge architecture and vault management."
+                    }
+                }]
+            }
+
+    async def mock_post(*args, **kwargs):
+        return MockResponse()
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    syn = await llm_generate_synopsis(
+        content="This is sample content about PKM systems.",
+        llm_base_url="https://mock.api/v1",
+        llm_api_key="mock-key"
+    )
+    assert syn is not None
+    assert "compelling overview" in syn
+
+
+

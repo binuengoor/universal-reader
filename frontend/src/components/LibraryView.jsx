@@ -435,7 +435,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
   return (
     <div className={`min-h-screen ${t.page} pb-20`}>
       {/* Top Navigation */}
-      <header className={`${t.header} sticky top-0 z-30 px-3 sm:px-6 py-3 sm:py-4`}>
+      <header className={`${t.header} sticky top-0 z-30 px-3 sm:px-6 header-safe pb-3 sm:pb-4`}>
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-1.5 sm:p-2 bg-indigo-500/20 border border-indigo-500/30 rounded-xl text-indigo-400">
@@ -844,7 +844,7 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                     </h3>
 
                     <p className={`text-xs line-clamp-3 leading-relaxed mb-3 ${t.cardSnippet}`}>
-                      {doc.excerpt || 'No preview available.'}
+                      {doc.synopsis || doc.excerpt || 'No preview available.'}
                     </p>
 
                     {/* Tags */}

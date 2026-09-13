@@ -112,7 +112,8 @@ def save_document(
     text: str,
     chunks: List[Dict],
     tags: Optional[List[str]] = None,
-    llm_state: Optional[Dict] = None
+    llm_state: Optional[Dict] = None,
+    synopsis: Optional[str] = None
 ) -> str:
     """Save document metadata, raw markdown, and chunks in the storage directory."""
     doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
@@ -123,6 +124,7 @@ def save_document(
     initial_llm_state = {
         "title_hash": None,
         "tags_hash": None,
+        "synopsis_hash": None,
         "speech_hash": None,
         "last_processed_at": None,
     }
@@ -133,6 +135,7 @@ def save_document(
         "id": doc_id,
         "title": title,
         "source_type": source_type,
+        "synopsis": synopsis,
         "tags": [t.strip().lower() for t in (tags or []) if t and t.strip()],
         "status": "inbox",
         "favorite": False,

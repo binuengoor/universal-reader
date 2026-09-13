@@ -124,4 +124,11 @@
 - [x] Make Table of Contents (Chapters) button permanently visible in Reader View with guided empty state when headings are missing.
 - [x] Fix PWA Service Worker caching by switching HTML navigation to strict Network-First, bumping cache version to `v3`, adding `Cache-Control: no-cache` for entry files, and clearing stale audio disk caches on server.
 
+## Phase 16: Mobile Safe-Area Polish, Zen Mode / Player Collapse & LLM Card Synopsis
+- [x] Fix PWA header safe-area insets: Apply `pt-safe` padding (`padding-top: max(0.75rem, env(safe-area-inset-top, 0px))`) across `LibraryView`, `ReaderView`, and `DocumentEditor`.
+- [x] Implement Collapsible Audio Player in `AudioPlayer.jsx` (one-tap toggle between full controls and ultra-compact mini-bar) and streamline mobile reader header.
+- [x] Implement LLM Synopsis generation in `backend/cleaner.py` and `backend/routes.py` (punchy card summaries fitting 120–180 chars) for intakes and batch jobs.
+- [x] Update `LibraryView.jsx` to render high-value note synopses on cards, and add "Generate Synopses" batch trigger in `SettingsModal.jsx`.
+- [x] Validate changes via automated tests, build, commit, push, and deploy to `oracle-xmillionmax`.
+
 

@@ -335,14 +335,70 @@ async def llm_clean_text(
     return regex_cleaned
 
 
+async def llm_generate_synopsis(
+    content: str,
+    llm_base_url: str = "",
+    llm_api_key: str = "",
+    llm_model: str = "gpt-4o-mini",
+    timeout: float = 20.0
+) -> Optional[str]:
+    """
+    Generate a punchy, concise 1-2 sentence synopsis (100-180 characters)
+    specifically designed to fit library card preview displays.
+    """
+    if not content or not content.strip() or not llm_base_url:
+        return None
+
+    sample_content = content[:3000].strip()
+    system_prompt = (
+        "You are an expert editorial curator. Summarize the provided document into a concise, "
+        "compelling 1-2 sentence synopsis (strictly between 100 and 180 characters) suitable for a "
+        "card preview. Focus on the core insight, takeaway, or problem solved. "
+        "Do not include phrases like 'This document discusses' or 'The author explains'. "
+        "Return ONLY the synopsis text and nothing else."
+    )
+
+    endpoint = f"{llm_base_url.rstrip('/')}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if llm_api_key:
+        headers["Authorization"] = f"Bearer {llm_api_key}"
+
+    payload = {
+        "model": llm_model or "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Document text:\n\n{sample_content}"}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 100
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(endpoint, json=payload, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                raw = raw.strip('"\'*`')
+                if raw:
+                    return re.sub(r'[\r\n\t]+', ' ', raw).strip()
+            else:
+                logger.warning(f"llm_generate_synopsis failed HTTP {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"llm_generate_synopsis error: {str(e)}")
+
+    return None
+
+
 async def llm_generate_title_and_tags(
     content: str,
     existing_tags: Optional[list] = None,
     llm_base_url: str = "",
     llm_api_key: str = "",
     llm_model: str = "gpt-4o-mini",
-    timeout: float = 20.0
-) -> tuple[Optional[str], list]:
+    timeout: float = 20.0,
+    include_synopsis: bool = False
+) -> Any:
     """
     Generate a concise title and 1-3 broad category tags using an OpenAI-compatible LLM.
     Enforces a strict global limit of at most 50 unique tags in the library:
@@ -376,14 +432,20 @@ async def llm_generate_title_and_tags(
             "Tags must be broad categories, not hyper-specific phrases."
         )
 
+    schema_desc = (
+        '{"title": "Descriptive Note Title", "tags": ["category1", "category2"], "synopsis": "A punchy 1-2 sentence core takeaway (120-180 characters)."}'
+        if include_synopsis else
+        '{"title": "Descriptive Note Title", "tags": ["category1", "category2"]}'
+    )
+
     system_prompt = (
         "You are an expert librarian and taxonomy classifier. Your job is to analyze the provided text and output a concise title and 1-3 category tags.\n"
         "Guidelines:\n"
         "1. Title: 3 to 8 words, descriptive, title case, no punctuation at the end.\n"
         "2. Tags: 1 to 3 broad category tags. Must be lowercase, only letters, numbers, and hyphens (no hashtags, spaces, or emojis).\n"
         f"3. {tag_instruction}\n"
-        "4. You MUST respond with ONLY a valid JSON object matching this schema:\n"
-        '{"title": "Descriptive Note Title", "tags": ["category1", "category2"]}'
+        f"4. You MUST respond with ONLY a valid JSON object matching this schema:\n"
+        f"{schema_desc}"
     )
 
     sample_content = content[:3000].strip()
@@ -420,11 +482,17 @@ async def llm_generate_title_and_tags(
                 parsed = json.loads(raw_answer)
                 title = parsed.get("title")
                 tags = parsed.get("tags") or []
+                synopsis = parsed.get("synopsis")
                 
                 # Sanitize title
                 clean_title = str(title).strip() if title else None
                 if clean_title:
                     clean_title = re.sub(r'[\r\n\t]+', ' ', clean_title).strip('"\';:')
+
+                # Sanitize synopsis
+                clean_synopsis = str(synopsis).strip().strip('"\'*`') if synopsis else None
+                if clean_synopsis:
+                    clean_synopsis = re.sub(r'[\r\n\t]+', ' ', clean_synopsis).strip()
 
                 # Sanitize tags
                 clean_tags = []
@@ -435,10 +503,14 @@ async def llm_generate_title_and_tags(
                             continue  # Skip illegal new tags when at 50 capacity
                         clean_tags.append(norm)
 
+                if include_synopsis:
+                    return clean_title, clean_tags[:3], clean_synopsis
                 return clean_title, clean_tags[:3]
             else:
                 logger.warning(f"llm_generate_title_and_tags failed HTTP {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
         logger.warning(f"llm_generate_title_and_tags error: {str(e)}")
 
+    if include_synopsis:
+        return None, [], None
     return None, []

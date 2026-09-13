@@ -10,6 +10,7 @@ import {
   Search, 
   Sliders, 
   ChevronDown,
+  ChevronUp,
   X,
   Check,
   Globe2,
@@ -61,6 +62,25 @@ export default function AudioPlayer({
   const [scopedVoices, setScopedVoices] = useState([]);
   const [scopedVoicesEnabled, setScopedVoicesEnabled] = useState(false);
   const [onlyShowFavorites, setOnlyShowFavorites] = useState(false);
+
+  // Collapsible mode (frees up mobile screen real estate)
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('universal_reader_player_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('universal_reader_player_collapsed', next.toString());
+      } catch {}
+      return next;
+    });
+  };
 
 
   // Full note audio generation state
@@ -263,226 +283,302 @@ export default function AudioPlayer({
   return (
     <>
       <div className="fixed bottom-2 sm:bottom-5 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] sm:w-[calc(100%-2rem)] max-w-4xl z-40 transition-all duration-200 pb-safe">
-        <div className={`${t.playerShell} rounded-2xl p-2.5 sm:p-4 shadow-2xl flex flex-col gap-2 sm:gap-2.5`}>
-          {/* Top Progress / Background Generation Banner */}
-          {isThisDocGenerating && (
-            <div className="flex items-center justify-between text-[11px] bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-indigo-300">
-              <div className="flex items-center gap-2 min-w-0">
-                <Loader2 className="w-3 h-3 animate-spin text-indigo-400 flex-shrink-0" />
-                <span className="truncate">
-                  Generating full note audio: {fullTask.completed} / {fullTask.total} blocks ({fullPercent}%)
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleCancelFullAudio}
-                className="text-xs text-zinc-400 hover:text-red-400 transition cursor-pointer ml-2 flex-shrink-0"
-              >
-                Cancel
-              </button>
+        {isCollapsed ? (
+          /* Sleek Collapsed Mini Bar */
+          <div className={`${t.playerShell} rounded-2xl px-3 py-2 shadow-2xl flex items-center justify-between gap-2.5 transition-all animate-in fade-in slide-in-from-bottom-1 duration-150`}>
+            {/* Compact Play/Pause */}
+            <button
+              type="button"
+              onClick={onTogglePlay}
+              disabled={!isReadyToPlay || (isLoadingAudio && !audioSrc)}
+              className="w-8 h-8 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-md active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isLoadingAudio ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : isPlaying ? (
+                <Pause className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+              )}
+            </button>
+
+            {/* Block info badge */}
+            <div className={`px-2 py-0.5 ${t.playerBadge} rounded-md text-[11px] font-mono font-medium shrink-0`}>
+              {totalBlocks > 0 ? displayBlockIndex + 1 : 0}/{totalBlocks}
             </div>
-          )}
 
-
-          {/* Audio Track Progress Bar */}
-          <div
-            onClick={handleProgressClick}
-            className={`w-full h-1.5 ${t.playerTrack} hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative group`}
-          >
+            {/* Compact Track Progress */}
             <div
-              className={`h-full ${t.playerTrackFill} rounded-full transition-all`}
-              style={{ width: `${progressPercent}%` }}
-            />
+              onClick={handleProgressClick}
+              className={`flex-1 h-1.5 ${t.playerTrack} hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative`}
+              title="Click to seek"
+            >
+              <div
+                className={`h-full ${t.playerTrackFill} rounded-full transition-all`}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+
+            <span className={`text-[10px] font-mono select-none ${t.cardMeta} shrink-0 hidden sm:inline`}>
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+
+            {/* Next block */}
+            <button
+              type="button"
+              onClick={onNextBlock}
+              disabled={!isReadyToPlay || displayBlockIndex >= totalBlocks - 1}
+              className={`p-1.5 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer shrink-0`}
+              title="Next Block"
+            >
+              <SkipForward className="w-4 h-4" />
+            </button>
+
+            {/* Expand button */}
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className={`p-1.5 rounded-lg border ${t.btnSecondary} transition cursor-pointer shrink-0 flex items-center gap-1`}
+              title="Expand Controls"
+            >
+              <ChevronUp className="w-3.5 h-3.5 text-indigo-500" />
+              <span className="text-[10px] font-medium hidden sm:inline">Controls</span>
+            </button>
           </div>
-
-          {/* Main Controls Row */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Left: Block info & Times */}
-            <div className="flex items-center gap-3 min-w-0">
-              <div className={`px-2 py-0.5 ${t.playerBadge} rounded-md text-xs font-mono font-medium`}>
-                Block {totalBlocks > 0 ? displayBlockIndex + 1 : 0} / {totalBlocks}
-              </div>
-              <span className={`text-xs font-mono select-none ${t.cardMeta}`}>
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-            </div>
-
-            {/* Center: Playback Controls */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              <button
-                type="button"
-                onClick={onPrevBlock}
-                disabled={!isReadyToPlay || displayBlockIndex <= 0}
-                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer`}
-                title="Previous Block"
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleJump(-10)}
-                disabled={!audioSrc}
-                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer`}
-                title="Jump back 10s"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span className="text-[9px] font-bold absolute top-2.5">10</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onTogglePlay}
-                disabled={!isReadyToPlay || (isLoadingAudio && !audioSrc)}
-                className="w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-lg shadow-indigo-600/30 active:scale-95 disabled:opacity-50 cursor-pointer"
-                title={isPlaying ? 'Pause' : 'Play'}
-              >
-                {isLoadingAudio ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : isPlaying ? (
-                  <Pause className="w-5 h-5 fill-current" />
-                ) : (
-                  <Play className="w-5 h-5 fill-current ml-0.5" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleJump(10)}
-                disabled={!audioSrc}
-                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer`}
-                title="Jump forward 10s"
-              >
-                <RotateCw className="w-4 h-4" />
-                <span className="text-[9px] font-bold absolute top-2.5">10</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onNextBlock}
-                disabled={!isReadyToPlay || displayBlockIndex >= totalBlocks - 1}
-                className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer`}
-                title="Next Block"
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Right: Actions, Speed & Voice / Model settings */}
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Generate Full Audio button */}
-              <button
-                type="button"
-                onClick={isThisDocGenerating ? handleCancelFullAudio : handleGenerateFullAudio}
-                disabled={!isReadyToPlay}
-                className={`hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
-                title="Pre-generate audio for all blocks in background"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                <span>{isThisDocGenerating ? 'Stop Full Gen' : 'Gen All'}</span>
-              </button>
-
-              {/* Download MP3 button */}
-              <button
-                type="button"
-                onClick={handleDownloadFullAudio}
-                disabled={!isReadyToPlay || isExporting}
-                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
-                title="Download full document as single MP3"
-              >
-                {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">MP3</span>
-              </button>
-
-              {/* Speed selector */}
-              <div className={`flex items-center rounded-lg p-0.5 ${t.btnSecondary}`}>
-                <select
-                  value={playbackSpeed}
-                  onChange={(e) => onSpeedChange && onSpeedChange(parseFloat(e.target.value))}
-                  className="bg-transparent text-xs font-semibold px-2 py-1 focus:outline-none cursor-pointer"
-                  title="Playback Speed"
-                >
-                  {speedOptions.map((s) => (
-                    <option key={s} value={s} className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>
-                      {s}x
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sleep timer button */}
-              <div className="relative">
+        ) : (
+          /* Full Controls Bar */
+          <div className={`${t.playerShell} rounded-2xl p-2.5 sm:p-4 shadow-2xl flex flex-col gap-2 sm:gap-2.5`}>
+            {/* Top Progress / Background Generation Banner */}
+            {isThisDocGenerating && (
+              <div className="flex items-center justify-between text-[11px] bg-indigo-950/50 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-indigo-300">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Loader2 className="w-3 h-3 animate-spin text-indigo-400 flex-shrink-0" />
+                  <span className="truncate">
+                    Generating full note audio: {fullTask.completed} / {fullTask.total} blocks ({fullPercent}%)
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowSleepMenu(!showSleepMenu)}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
-                    sleepTimer
-                      ? 'bg-amber-950/40 border-amber-600/50 text-amber-500'
-                      : t.btnSecondary
-                  }`}
-                  title="Sleep Timer"
+                  onClick={handleCancelFullAudio}
+                  className="text-xs text-zinc-400 hover:text-red-400 transition cursor-pointer ml-2 flex-shrink-0"
                 >
-                  <Moon className={`w-3.5 h-3.5 ${sleepTimer ? 'text-amber-500 fill-amber-500' : ''}`} />
-                  {sleepTimerRemaining !== null && sleepTimerRemaining > 0 ? (
-                    <span className="font-mono text-[11px] font-semibold">
-                      {Math.floor(sleepTimerRemaining / 60)}:{(sleepTimerRemaining % 60).toString().padStart(2, '0')}
-                    </span>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+
+            {/* Audio Track Progress Bar */}
+            <div
+              onClick={handleProgressClick}
+              className={`w-full h-1.5 ${t.playerTrack} hover:h-2 rounded-full overflow-hidden cursor-pointer transition-all relative group`}
+            >
+              <div
+                className={`h-full ${t.playerTrackFill} rounded-full transition-all`}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+
+            {/* Main Controls Row */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Left: Block info & Times */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`px-2 py-0.5 ${t.playerBadge} rounded-md text-xs font-mono font-medium`}>
+                  Block {totalBlocks > 0 ? displayBlockIndex + 1 : 0} / {totalBlocks}
+                </div>
+                <span className={`text-xs font-mono select-none ${t.cardMeta}`}>
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
+
+              {/* Center: Playback Controls */}
+              <div className="flex items-center gap-1 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={onPrevBlock}
+                  disabled={!isReadyToPlay || displayBlockIndex <= 0}
+                  className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer`}
+                  title="Previous Block"
+                >
+                  <SkipBack className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleJump(-10)}
+                  disabled={!audioSrc}
+                  className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer`}
+                  title="Jump back 10s"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span className="text-[9px] font-bold absolute top-2.5">10</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onTogglePlay}
+                  disabled={!isReadyToPlay || (isLoadingAudio && !audioSrc)}
+                  className="w-11 h-11 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-lg shadow-indigo-600/30 active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isLoadingAudio ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : isPlaying ? (
+                    <Pause className="w-5 h-5 fill-current" />
                   ) : (
-                    <span className="hidden xl:inline">Timer</span>
+                    <Play className="w-5 h-5 fill-current ml-0.5" />
                   )}
                 </button>
 
-                {showSleepMenu && (
-                  <div className={`absolute bottom-full mb-2 right-0 ${t.playerPopover} rounded-xl p-1 shadow-2xl z-50 flex flex-col gap-0.5 min-w-36 text-xs`}>
-                    <div className={`px-2 py-1 text-[10px] uppercase font-bold tracking-wider ${t.cardMeta}`}>Sleep Timer</div>
-                    {[
-                      { label: 'Off', val: null },
-                      { label: '15 minutes', val: 15 },
-                      { label: '30 minutes', val: 30 },
-                      { label: '45 minutes', val: 45 },
-                      { label: '60 minutes', val: 60 },
-                      { label: 'End of Document', val: 'end_of_doc' }
-                    ].map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={() => {
-                          if (onSetSleepTimer) onSetSleepTimer(item.val);
-                          setShowSleepMenu(false);
-                        }}
-                        className={`px-2.5 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer ${
-                          sleepTimer === item.val
-                            ? 'bg-indigo-600 text-white font-medium'
-                            : `${t.playerPopoverItem}`
-                        }`}
-                      >
-                        <span>{item.label}</span>
-                        {sleepTimer === item.val && <Check className="w-3.5 h-3.5 text-white" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleJump(10)}
+                  disabled={!audioSrc}
+                  className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition flex items-center justify-center relative cursor-pointer`}
+                  title="Jump forward 10s"
+                >
+                  <RotateCw className="w-4 h-4" />
+                  <span className="text-[9px] font-bold absolute top-2.5">10</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onNextBlock}
+                  disabled={!isReadyToPlay || displayBlockIndex >= totalBlocks - 1}
+                  className={`p-2 rounded-full ${t.playerBtn} disabled:opacity-30 transition cursor-pointer`}
+                  title="Next Block"
+                >
+                  <SkipForward className="w-4 h-4" />
+                </button>
               </div>
 
-              {/* Model & Voice Dropdown Trigger */}
-              <button
-                type="button"
-                onClick={() => setShowModelModal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer max-w-[190px] ${t.btnSecondary}`}
-                title="Voice & Engine Configuration"
-              >
-                <Sliders className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                <span className="truncate">
-                  {currentVoiceObj ? (currentVoiceObj.label.split(' - ')[0] || currentVoiceObj.id) : selectedVoice}
-                </span>
-                <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${t.playerBadge} flex-shrink-0`}>
-                  {selectedModel}
-                </span>
-                <ChevronDown className="w-3 h-3 opacity-60 flex-shrink-0" />
-              </button>
+              {/* Right: Actions, Speed & Voice / Model settings */}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {/* Generate Full Audio button */}
+                <button
+                  type="button"
+                  onClick={isThisDocGenerating ? handleCancelFullAudio : handleGenerateFullAudio}
+                  disabled={!isReadyToPlay}
+                  className={`hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
+                  title="Pre-generate audio for all blocks in background"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>{isThisDocGenerating ? 'Stop Full Gen' : 'Gen All'}</span>
+                </button>
+
+                {/* Download MP3 button */}
+                <button
+                  type="button"
+                  onClick={handleDownloadFullAudio}
+                  disabled={!isReadyToPlay || isExporting}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
+                  title="Download full document as single MP3"
+                >
+                  {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">MP3</span>
+                </button>
+
+                {/* Speed selector */}
+                <div className={`flex items-center rounded-lg p-0.5 ${t.btnSecondary}`}>
+                  <select
+                    value={playbackSpeed}
+                    onChange={(e) => onSpeedChange && onSpeedChange(parseFloat(e.target.value))}
+                    className="bg-transparent text-xs font-semibold px-2 py-1 focus:outline-none cursor-pointer"
+                    title="Playback Speed"
+                  >
+                    {speedOptions.map((s) => (
+                      <option key={s} value={s} className={theme === 'sepia' ? 'bg-[#fbf0d9] text-[#3b2a1a]' : theme === 'light' ? 'bg-white text-zinc-900' : 'bg-zinc-900 text-zinc-100'}>
+                        {s}x
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sleep timer button */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowSleepMenu(!showSleepMenu)}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                      sleepTimer
+                        ? 'bg-amber-950/40 border-amber-600/50 text-amber-500'
+                        : t.btnSecondary
+                    }`}
+                    title="Sleep Timer"
+                  >
+                    <Moon className={`w-3.5 h-3.5 ${sleepTimer ? 'text-amber-500 fill-amber-500' : ''}`} />
+                    {sleepTimerRemaining !== null && sleepTimerRemaining > 0 ? (
+                      <span className="font-mono text-[11px] font-semibold">
+                        {Math.floor(sleepTimerRemaining / 60)}:{(sleepTimerRemaining % 60).toString().padStart(2, '0')}
+                      </span>
+                    ) : (
+                      <span className="hidden xl:inline">Timer</span>
+                    )}
+                  </button>
+
+                  {showSleepMenu && (
+                    <div className={`absolute bottom-full mb-2 right-0 ${t.playerPopover} rounded-xl p-1 shadow-2xl z-50 flex flex-col gap-0.5 min-w-36 text-xs`}>
+                      <div className={`px-2 py-1 text-[10px] uppercase font-bold tracking-wider ${t.cardMeta}`}>Sleep Timer</div>
+                      {[
+                        { label: 'Off', val: null },
+                        { label: '15 minutes', val: 15 },
+                        { label: '30 minutes', val: 30 },
+                        { label: '45 minutes', val: 45 },
+                        { label: '60 minutes', val: 60 },
+                        { label: 'End of Document', val: 'end_of_doc' }
+                      ].map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => {
+                            if (onSetSleepTimer) onSetSleepTimer(item.val);
+                            setShowSleepMenu(false);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg text-left transition flex items-center justify-between cursor-pointer ${
+                            sleepTimer === item.val
+                              ? 'bg-indigo-600 text-white font-medium'
+                              : `${t.playerPopoverItem}`
+                          }`}
+                        >
+                          <span>{item.label}</span>
+                          {sleepTimer === item.val && <Check className="w-3.5 h-3.5 text-white" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Model & Voice Dropdown Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setShowModelModal(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer max-w-[190px] ${t.btnSecondary}`}
+                  title="Voice & Engine Configuration"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                  <span className="truncate">
+                    {currentVoiceObj ? (currentVoiceObj.label.split(' - ')[0] || currentVoiceObj.id) : selectedVoice}
+                  </span>
+                  <span className={`text-[10px] font-mono px-1 py-0.2 rounded ${t.playerBadge} flex-shrink-0`}>
+                    {selectedModel}
+                  </span>
+                  <ChevronDown className="w-3 h-3 opacity-60 flex-shrink-0" />
+                </button>
+
+                {/* Collapse to Mini-bar Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleCollapsed}
+                  className={`p-1.5 rounded-lg border ${t.btnSecondary} transition cursor-pointer shrink-0`}
+                  title="Collapse Player (frees reading space)"
+                >
+                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Model & Voice Selection Modal */}

@@ -13,7 +13,7 @@ from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
 from .tts import tts_client, get_audio_filename, UniversalTTSClient
 from .config import load_settings, save_settings
-from .cleaner import clean_text_for_speech, apply_glossary, llm_clean_text, llm_generate_title_and_tags
+from .cleaner import clean_text_for_speech, apply_glossary, llm_clean_text, llm_generate_title_and_tags, llm_generate_synopsis
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
@@ -772,10 +772,11 @@ async def _resolve_title_and_tags(
     user_title: Optional[str],
     user_tags: Optional[List[str]],
     default_title: str
-) -> Tuple[str, List[str]]:
+) -> Tuple[str, List[str], Optional[str]]:
     """
     If title or tags are not specified, call OpenAI-compatible LLM if configured.
     Respects user overrides and the 50-tag global constraint.
+    Also produces a punchy card synopsis.
     """
     settings = load_settings()
     llm_base = settings.get("llm_base_url", "").strip()
@@ -784,49 +785,56 @@ async def _resolve_title_and_tags(
 
     title = user_title.strip() if (user_title and user_title.strip()) else None
     tags = [t.strip().lower() for t in user_tags if t and t.strip()] if user_tags is not None else None
-
-    # If both user provided title and tags, no need for LLM
-    if title is not None and tags is not None and len(tags) > 0:
-        return title, tags
+    synopsis = None
 
     # Attempt LLM generation if URL configured
     if llm_base and (title is None or tags is None or len(tags) == 0):
         all_tags = get_all_library_tags()
-        llm_title, llm_tags = await llm_generate_title_and_tags(
+        llm_title, llm_tags, llm_syn = await llm_generate_title_and_tags(
             content=content,
             existing_tags=all_tags,
             llm_base_url=llm_base,
             llm_api_key=llm_key,
-            llm_model=llm_model
+            llm_model=llm_model,
+            include_synopsis=True
         )
         if title is None and llm_title:
             title = llm_title
         if (tags is None or len(tags) == 0) and llm_tags:
             tags = llm_tags
+        if llm_syn:
+            synopsis = llm_syn
+    elif llm_base:
+        synopsis = await llm_generate_synopsis(
+            content=content,
+            llm_base_url=llm_base,
+            llm_api_key=llm_key,
+            llm_model=llm_model
+        )
 
     final_title = title if title else default_title
     final_tags = tags if tags is not None else []
-    return final_title, final_tags
+    return final_title, final_tags, synopsis
 
 
 @router.post("/create")
 async def create_document(req: CreateDocRequest):
-    """Create document from scratchpad text with optional LLM title/tags."""
+    """Create document from scratchpad text with optional LLM title/tags/synopsis."""
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="Content cannot be empty")
 
     now = datetime.now()
     default_title = f"Doc - {now.strftime('%Y-%m-%d %H:%M')}"
-    title, tags = await _resolve_title_and_tags(content, req.title, req.tags, default_title)
+    title, tags, synopsis = await _resolve_title_and_tags(content, req.title, req.tags, default_title)
 
     chunks = chunk_text(content)
     if not chunks:
         raise HTTPException(status_code=400, detail="Unable to extract meaningful text")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "text", content, chunks, tags=tags)
-    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags}
+    save_document(doc_id, title, "text", content, chunks, tags=tags, synopsis=synopsis)
+    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
 
 @router.post("/url")
@@ -855,15 +863,15 @@ async def ingest_url(req: UrlDocRequest):
     domain = url.split('//')[-1].split('/')[0]
     default_title = meta_title or f"Web - {domain} ({now.strftime('%Y-%m-%d')})"
 
-    title, tags = await _resolve_title_and_tags(extracted, req.title or meta_title, req.tags, default_title)
+    title, tags, synopsis = await _resolve_title_and_tags(extracted, req.title or meta_title, req.tags, default_title)
 
     chunks = chunk_text(extracted)
     if not chunks:
         raise HTTPException(status_code=400, detail="Extracted content is too short or empty")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "url", extracted, chunks, tags=tags)
-    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags}
+    save_document(doc_id, title, "url", extracted, chunks, tags=tags, synopsis=synopsis)
+    return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
 
 @router.post("/upload")
@@ -900,19 +908,19 @@ async def upload_file(
 
     default_title = os.path.splitext(filename)[0]
     user_tags = [t.strip().lower() for t in tags.split(",") if t.strip()] if tags else None
-    resolved_title, resolved_tags = await _resolve_title_and_tags(text, title, user_tags, default_title)
+    resolved_title, resolved_tags, resolved_synopsis = await _resolve_title_and_tags(text, title, user_tags, default_title)
 
     chunks = chunk_text(text)
     if not chunks:
         raise HTTPException(status_code=400, detail="File content resulted in 0 readable blocks")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, resolved_title, source_type, text, chunks, tags=resolved_tags)
-    return {"id": doc_id, "title": resolved_title, "block_count": len(chunks), "tags": resolved_tags}
+    save_document(doc_id, resolved_title, source_type, text, chunks, tags=resolved_tags, synopsis=resolved_synopsis)
+    return {"id": doc_id, "title": resolved_title, "block_count": len(chunks), "tags": resolved_tags, "synopsis": resolved_synopsis}
 
 
 class BatchLlmRequest(BaseModel):
-    job_type: str  # 'title' | 'tags' | 'clean_text' | 'all'
+    job_type: str  # 'title' | 'tags' | 'synopsis' | 'clean_text' | 'all'
     doc_ids: Optional[List[str]] = None
     overwrite: bool = False
 
@@ -1015,7 +1023,27 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                     llm_state["tags_hash"] = content_hash
                     modified = True
 
-            # 3. Clean text re-chunking
+            # 3. Synopsis generation
+            curr_synopsis = meta.get("synopsis")
+            should_run_synopsis = (
+                (req.job_type == "synopsis" and (req.overwrite or not curr_synopsis)) or
+                (req.job_type == "all" and req.overwrite)
+            )
+
+            if should_run_synopsis:
+                new_synopsis = await llm_generate_synopsis(
+                    content=content,
+                    llm_base_url=llm_base,
+                    llm_api_key=llm_key,
+                    llm_model=llm_model
+                )
+                if new_synopsis:
+                    meta["synopsis"] = new_synopsis
+                    result_item["new_synopsis"] = new_synopsis
+                    llm_state["synopsis_hash"] = content_hash
+                    modified = True
+
+            # 4. Clean text re-chunking
             if req.job_type in ("clean_text", "all") and os.path.exists(chunks_path):
                 should_run_clean = req.overwrite or (llm_state.get("speech_hash") != content_hash)
                 if should_run_clean:

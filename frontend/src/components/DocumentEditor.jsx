@@ -159,7 +159,7 @@ export default function DocumentEditor({ docId, onBack, onSaved, onOpenDisplaySe
   return (
     <div className={`min-h-screen ${t.page} flex flex-col`}>
       {/* Header */}
-      <header className={`sticky top-0 z-20 ${t.header} px-6 py-3 flex items-center justify-between gap-4`}>
+      <header className={`sticky top-0 z-20 ${t.header} px-3 sm:px-6 header-safe pb-2.5 sm:pb-3 flex items-center justify-between gap-3 sm:gap-4`}>
         <div className="flex items-center gap-3">
           <button
             type="button"

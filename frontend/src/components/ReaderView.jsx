@@ -349,24 +349,41 @@ export default function ReaderView({
   return (
     <div className={`min-h-screen transition-colors duration-200 ${getThemeClasses()} pb-32`}>
       {/* Top Header */}
-      <header className={`sticky top-0 z-20 backdrop-blur-md border-b px-6 py-3 flex items-center justify-between gap-4 transition-colors duration-200 ${
+      <header className={`sticky top-0 z-20 backdrop-blur-md border-b px-3 sm:px-6 header-safe pb-2.5 sm:pb-3 flex items-center justify-between gap-2 sm:gap-4 transition-colors duration-200 ${
         settings.theme === 'light'
           ? 'bg-white/85 border-zinc-200'
           : settings.theme === 'sepia'
           ? 'bg-[#fbf0d9]/85 border-[#e8d5b5]'
           : 'bg-black/85 border-zinc-800'
       }`}>
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={onBack}
-            className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex-shrink-0"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex-shrink-0"
             title="Back to Library"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="min-w-0">
-            <h1 className="font-semibold text-base truncate">{meta?.title || 'Untitled Document'}</h1>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs opacity-65 mt-0.5">
+            <h1 className="font-semibold text-sm sm:text-base truncate">{meta?.title || 'Untitled Document'}</h1>
+            {/* Streamlined single-line mobile subtitle */}
+            <div className="flex sm:hidden items-center gap-1 text-[11px] opacity-70 mt-0.5 truncate">
+              <span className="uppercase font-mono text-[9px] font-semibold">{meta?.source_type || 'text'}</span>
+              <span>•</span>
+              <span>{chunks?.length || 0} blk</span>
+              <span>•</span>
+              <span>~{Math.max(1, Math.round((meta?.total_chars || 0) / 1000))}m</span>
+              {activeBlockId !== null && (
+                <>
+                  <span>•</span>
+                  <span className="font-semibold text-indigo-500 dark:text-indigo-400">
+                    #{activeBlockId + 1}
+                  </span>
+                </>
+              )}
+            </div>
+            {/* Desktop expanded subtitle */}
+            <div className="hidden sm:flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs opacity-65 mt-0.5">
               <span className="uppercase tracking-wider font-mono text-[10px]">{meta?.source_type || 'text'}</span>
               <span>•</span>
               <span>{chunks?.length || 0} blocks</span>
@@ -405,11 +422,11 @@ export default function ReaderView({
         </div>
 
         {/* Header Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setIsTocOpen((prev) => !prev)}
-            className={`p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer ${
+            className={`p-1.5 sm:p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer ${
               isTocOpen ? 'bg-indigo-600/20 text-indigo-500 dark:text-indigo-300' : ''
             }`}
             title="Table of Contents (Chapters)"
@@ -424,7 +441,7 @@ export default function ReaderView({
                 setShowSearch(true);
                 setTimeout(() => searchInputRef.current?.focus(), 50);
               }}
-              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium"
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium"
               title="Search Document (Cmd+F / Ctrl+F)"
             >
               <Search className="w-4 h-4" />
@@ -435,7 +452,7 @@ export default function ReaderView({
           {onEdit && (
             <button
               onClick={onEdit}
-              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10"
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10"
               title="Edit Document Markdown"
             >
               <FileEdit className="w-4 h-4 text-indigo-400" />
@@ -445,7 +462,7 @@ export default function ReaderView({
 
           <button
             onClick={onOpenDisplaySettings || (() => setIsDrawerOpen(true))}
-            className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10 cursor-pointer"
             title="Display Options (Aa)"
           >
             <Type className="w-4 h-4 text-indigo-400" />
