@@ -560,7 +560,11 @@ async def _synthesize_or_get_cached_audio(
         path=file_path,
         media_type="audio/mpeg",
         filename=filename,
-        headers={"X-Cache": "HIT" if is_cache_hit else "MISS"}
+        headers={
+            "X-Cache": "HIT" if is_cache_hit else "MISS",
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Accept-Ranges": "bytes"
+        }
     )
 
 @router.post("/{doc_id}/blocks/{block_id}/audio")

@@ -12,6 +12,7 @@ class PriorityAudioQueue {
     this.queue = [];
     this.isProcessing = false;
     this.prefetchedSet = new Set();
+    this.blobMap = new Map(); // cacheKey -> ObjectURL (in-memory audio blobs)
     this.activeAbortController = null;
     this.listeners = new Set();
     this.fullDocTask = null; // { docId, total, completed, voice, model, speed, cancelled: false }
@@ -43,6 +44,22 @@ class PriorityAudioQueue {
   isCached(docId, blockId, voice, model, speed) {
     const key = this.getCacheKey(docId, blockId, voice, model, speed);
     return this.prefetchedSet.has(key);
+  }
+
+  getBlobUrl(docId, blockId, voice, model, speed) {
+    const key = this.getCacheKey(docId, blockId, voice, model, speed);
+    return this.blobMap.get(key) || null;
+  }
+
+  clearBlobUrls() {
+    for (const url of this.blobMap.values()) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore
+      }
+    }
+    this.blobMap.clear();
   }
 
   enqueue({ docId, blockId, voice, model, speed, priority = 5, onDone }) {
@@ -150,14 +167,37 @@ class PriorityAudioQueue {
       )}&model=${encodeURIComponent(item.model)}&speed=${item.speed}`;
 
       this.activeAbortController = new AbortController();
-      await fetch(url, {
+      const res = await fetch(url, {
         method: 'GET',
         headers: { 'X-Prefetch': 'true' },
         signal: this.activeAbortController.signal,
       });
 
-      this.prefetchedSet.add(item.cacheKey);
-      if (item.onDone) item.onDone(true);
+      if (res.ok) {
+        // For lookahead sliding window (priority <= 5), create a local Blob URL
+        // so lock-screen transitions are instantaneous and zero-network from memory
+        if (item.priority <= 5) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+
+          // Bounded cache (up to 30 items) to prevent high memory usage
+          if (this.blobMap.size >= 30) {
+            const oldestKey = this.blobMap.keys().next().value;
+            const oldUrl = this.blobMap.get(oldestKey);
+            if (oldUrl) {
+              try { URL.revokeObjectURL(oldUrl); } catch {}
+            }
+            this.blobMap.delete(oldestKey);
+          }
+
+          this.blobMap.set(item.cacheKey, blobUrl);
+        }
+
+        this.prefetchedSet.add(item.cacheKey);
+        if (item.onDone) item.onDone(true);
+      } else {
+        if (item.onDone) item.onDone(false);
+      }
     } catch {
       // Failed: can retry later
       if (item.onDone) item.onDone(false);

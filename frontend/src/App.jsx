@@ -72,6 +72,45 @@ export default function App() {
 
   const audioRef = useRef(null);
 
+  // Synchronous refs to prevent stale closure issues in MediaSession and ended handlers
+  const activeBlockRef = useRef(activeBlockId);
+  activeBlockRef.current = activeBlockId;
+
+  const totalBlocksRef = useRef(totalBlocks);
+  totalBlocksRef.current = totalBlocks;
+
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
+
+  const playbackSpeedRef = useRef(playbackSpeed);
+  playbackSpeedRef.current = playbackSpeed;
+
+  const selectedVoiceRef = useRef(selectedVoice);
+  selectedVoiceRef.current = selectedVoice;
+
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+
+  const interBlockPauseMsRef = useRef(interBlockPauseMs);
+  interBlockPauseMsRef.current = interBlockPauseMs;
+
+  const sleepTimerRef = useRef(sleepTimer);
+  sleepTimerRef.current = sleepTimer;
+
+  const audioDocRef = useRef(audioDoc);
+  audioDocRef.current = audioDoc;
+
+  const selectedDocIdRef = useRef(selectedDocId);
+  selectedDocIdRef.current = selectedDocId;
+
+  const lastLoadedConfigRef = useRef({
+    docId: null,
+    blockId: null,
+    voice: null,
+    model: null,
+    speed: null,
+  });
+
   // Fetch backend settings on mount to ensure user's configured default model and voice are picked up
   useEffect(() => {
     let ignore = false;
@@ -185,7 +224,117 @@ export default function App() {
     }
   }, [audioDoc?.id, selectedDocId, activeBlockId]);
 
-  // When activeBlockId, voice, model, or speed changes, update audio source ONLY if playing or already loaded
+  const updateMediaSessionMetadata = (title, blockIndex, total) => {
+    if (!('mediaSession' in navigator) || !window.MediaMetadata) return;
+    const docTitle = title || audioDocRef.current?.title || 'Universal Reader';
+    const blockNum = blockIndex !== null && blockIndex !== undefined ? blockIndex + 1 : 1;
+    const blockText = total > 0 ? `Block ${blockNum} of ${total}` : 'Universal Reader';
+
+    try {
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: docTitle,
+        artist: blockText,
+        album: 'Universal Reader',
+        artwork: [
+          { src: '/favicon.svg', sizes: '512x512', type: 'image/svg+xml' },
+        ],
+      });
+      navigator.mediaSession.playbackState = isPlayingRef.current ? 'playing' : 'paused';
+    } catch {
+      // ignore
+    }
+  };
+
+  const playBlock = (targetBlockId, autoPlay = true) => {
+    const targetDocId = audioDocRef.current?.id || selectedDocIdRef.current;
+    const total = totalBlocksRef.current;
+    if (!targetDocId || targetBlockId === null || targetBlockId === undefined) return;
+    if (targetBlockId < 0 || (total > 0 && targetBlockId >= total)) return;
+
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+
+    const voice = selectedVoiceRef.current;
+    const model = selectedModelRef.current;
+    const speed = playbackSpeedRef.current;
+
+    // Check if we have an in-memory preloaded Blob URL
+    const blobUrl = priorityAudioQueue.getBlobUrl(targetDocId, targetBlockId, voice, model, speed);
+    const serverUrl = `/api/documents/${targetDocId}/blocks/${targetBlockId}/audio?voice=${encodeURIComponent(
+      voice
+    )}&model=${encodeURIComponent(model)}&speed=${speed}`;
+    const finalSrc = blobUrl || serverUrl;
+
+    // Mark current config so useEffect doesn't duplicate-load or interrupt ongoing audio
+    lastLoadedConfigRef.current = {
+      docId: targetDocId,
+      blockId: targetBlockId,
+      voice,
+      model,
+      speed,
+    };
+
+    // Synchronously assign src and playbackRate on HTMLAudioElement
+    audioEl.src = finalSrc;
+    audioEl.playbackRate = speed;
+
+    if (autoPlay) {
+      setIsPlaying(true);
+      isPlayingRef.current = true;
+      const playPromise = audioEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('[Audio] play() blocked or interrupted:', err);
+        });
+      }
+    }
+
+    // Immediately update MediaSession title/artist for iOS lock screen
+    updateMediaSessionMetadata(audioDocRef.current?.title, targetBlockId, total);
+
+    // Update React states
+    setActiveBlockId(targetBlockId);
+    activeBlockRef.current = targetBlockId;
+    setCurrentAudioSrc(finalSrc);
+    setIsLoadingAudio(true);
+  };
+
+  const handleAudioEnded = () => {
+    const currentBlock = activeBlockRef.current;
+    const total = totalBlocksRef.current;
+
+    // Sleep timer 'end_of_doc' check
+    if (sleepTimerRef.current === 'end_of_doc' && currentBlock !== null && currentBlock >= total - 1) {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setSleepTimer(null);
+      setSleepTimerRemaining(null);
+      return;
+    }
+
+    if (currentBlock !== null && currentBlock < total - 1) {
+      const nextBlock = currentBlock + 1;
+      const pauseMs = interBlockPauseMsRef.current;
+
+      // CRITICAL FOR IOS PWA / LOCK SCREEN:
+      // When screen is off (document.hidden) or in background, JavaScript timers (setTimeout)
+      // are suspended by iOS WebKit, and delaying play() past the ended event loop causes iOS
+      // to revoke audio playback permissions.
+      // Therefore, if document.hidden or pauseMs <= 0, transition IMMEDIATELY and synchronously!
+      if (document.hidden || pauseMs <= 0) {
+        playBlock(nextBlock, true);
+      } else {
+        setTimeout(() => {
+          playBlock(nextBlock, true);
+        }, pauseMs);
+      }
+    } else {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+    }
+  };
+
+  // When activeBlockId, voice, model, or speed changes from outside (e.g. settings change), update audio source
   useEffect(() => {
     const targetDocId = audioDoc?.id || selectedDocId;
     if (!targetDocId || activeBlockId === null) return;
@@ -194,22 +343,22 @@ export default function App() {
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
-    const src = `/api/documents/${targetDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
-    setCurrentAudioSrc(src);
-    setIsLoadingAudio(true);
-    audioEl.src = src;
-    audioEl.playbackRate = playbackSpeed;
-    audioEl.load();
-
-    if (isPlaying) {
-      const playPromise = audioEl.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {});
-      }
+    const last = lastLoadedConfigRef.current;
+    // Skip if already loaded for this exact block and configuration (e.g. from playBlock)
+    if (
+      last.docId === targetDocId &&
+      last.blockId === activeBlockId &&
+      last.voice === selectedVoice &&
+      last.model === selectedModel &&
+      last.speed === playbackSpeed
+    ) {
+      return;
     }
-  }, [selectedDocId, audioDoc?.id, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying, currentAudioSrc]);
 
-  // Lookahead sliding window prefetch for blocks N+1 and N+2 (priority 5)
+    playBlock(activeBlockId, isPlaying);
+  }, [selectedDocId, audioDoc?.id, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying]);
+
+  // Lookahead sliding window prefetch for blocks N+1, N+2, and N+3 (priority 5)
   useEffect(() => {
     const targetDocId = audioDoc?.id || selectedDocId;
     if (!targetDocId || activeBlockId === null) return;
@@ -223,28 +372,18 @@ export default function App() {
 
     if (!isPlaying) return;
 
-    const next1 = activeBlockId + 1;
-    const next2 = activeBlockId + 2;
-
-    if (next1 < totalBlocks) {
-      priorityAudioQueue.enqueue({
-        docId: targetDocId,
-        blockId: next1,
-        voice: selectedVoice,
-        model: selectedModel,
-        speed: playbackSpeed,
-        priority: 5,
-      });
-    }
-    if (next2 < totalBlocks) {
-      priorityAudioQueue.enqueue({
-        docId: targetDocId,
-        blockId: next2,
-        voice: selectedVoice,
-        model: selectedModel,
-        speed: playbackSpeed,
-        priority: 5,
-      });
+    for (let offset = 1; offset <= 3; offset++) {
+      const nextIndex = activeBlockId + offset;
+      if (nextIndex < totalBlocks) {
+        priorityAudioQueue.enqueue({
+          docId: targetDocId,
+          blockId: nextIndex,
+          voice: selectedVoice,
+          model: selectedModel,
+          speed: playbackSpeed,
+          priority: 5,
+        });
+      }
     }
   }, [selectedDocId, audioDoc?.id, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel, playbackSpeed]);
 
@@ -252,22 +391,38 @@ export default function App() {
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
-    if (isPlaying) {
+    if (isPlayingRef.current) {
       audioEl.pause();
       setIsPlaying(false);
-    } else {
-      const targetDocId = selectedDocId || audioDoc?.id;
-      // If audio element doesn't have src yet, assign it now
-      if (!currentAudioSrc && targetDocId) {
-        const src = `/api/documents/${targetDocId}/blocks/${activeBlockId}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
-        setCurrentAudioSrc(src);
-        setIsLoadingAudio(true);
-        audioEl.src = src;
-        audioEl.playbackRate = playbackSpeed;
-        audioEl.load();
+      isPlayingRef.current = false;
+      if ('mediaSession' in navigator) {
+        try { navigator.mediaSession.playbackState = 'paused'; } catch {}
       }
-      setIsPlaying(true);
-      audioEl.play().catch(() => {});
+    } else {
+      const targetDocId = selectedDocIdRef.current || audioDocRef.current?.id;
+      if (!targetDocId) return;
+
+      const currentBlock = activeBlockRef.current ?? 0;
+      const last = lastLoadedConfigRef.current;
+
+      // If audio element is already primed with this block and hasn't changed
+      if (
+        last.docId === targetDocId &&
+        last.blockId === currentBlock &&
+        last.voice === selectedVoiceRef.current &&
+        last.model === selectedModelRef.current &&
+        last.speed === playbackSpeedRef.current &&
+        audioEl.src
+      ) {
+        setIsPlaying(true);
+        isPlayingRef.current = true;
+        if ('mediaSession' in navigator) {
+          try { navigator.mediaSession.playbackState = 'playing'; } catch {}
+        }
+        audioEl.play().catch(() => {});
+      } else {
+        playBlock(currentBlock, true);
+      }
     }
   };
 
@@ -280,6 +435,7 @@ export default function App() {
 
   const handleSpeedChange = (speed) => {
     setPlaybackSpeed(speed);
+    playbackSpeedRef.current = speed;
     if (audioRef.current) {
       audioRef.current.playbackRate = speed;
     }
@@ -287,21 +443,28 @@ export default function App() {
 
   const handleVoiceChange = (voice) => {
     setSelectedVoice(voice);
+    selectedVoiceRef.current = voice;
   };
 
   const handleModelChange = (model) => {
     setSelectedModel(model);
+    selectedModelRef.current = model;
   };
 
   const handleNextBlock = () => {
-    if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
-      setActiveBlockId((prev) => prev + 1);
+    const current = activeBlockRef.current;
+    const total = totalBlocksRef.current;
+    if (current !== null && current < total - 1) {
+      const shouldPlay = isPlayingRef.current || document.hidden;
+      playBlock(current + 1, shouldPlay);
     }
   };
 
   const handlePrevBlock = () => {
-    if (activeBlockId !== null && activeBlockId > 0) {
-      setActiveBlockId((prev) => prev - 1);
+    const current = activeBlockRef.current;
+    if (current !== null && current > 0) {
+      const shouldPlay = isPlayingRef.current || document.hidden;
+      playBlock(current - 1, shouldPlay);
     }
   };
 
@@ -309,25 +472,7 @@ export default function App() {
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
 
-    const docTitle = audioDoc?.title || 'Universal Reader';
-    const blockText = totalBlocks > 0
-      ? `Block ${activeBlockId !== null ? activeBlockId + 1 : 1} of ${totalBlocks}`
-      : 'Ready';
-
-    if (window.MediaMetadata) {
-      try {
-        navigator.mediaSession.metadata = new window.MediaMetadata({
-          title: docTitle,
-          artist: blockText,
-          album: 'Universal Reader',
-          artwork: [
-            { src: '/favicon.svg', sizes: '512x512', type: 'image/svg+xml' },
-          ],
-        });
-      } catch {
-        // ignore
-      }
-    }
+    updateMediaSessionMetadata(audioDoc?.title, activeBlockId, totalBlocks);
 
     try {
       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
@@ -349,11 +494,11 @@ export default function App() {
     setAction('nexttrack', () => handleNextBlock());
     setAction('seekbackward', (details) => {
       const offset = details?.seekOffset || 10;
-      handleSeek(Math.max(0, currentTime - offset));
+      handleSeek(Math.max(0, (audioRef.current?.currentTime || 0) - offset));
     });
     setAction('seekforward', (details) => {
       const offset = details?.seekOffset || 10;
-      handleSeek(Math.min(duration, currentTime + offset));
+      handleSeek(Math.min(audioRef.current?.duration || 0, (audioRef.current?.currentTime || 0) + offset));
     });
     setAction('seekto', (details) => {
       if (details?.seekTime !== undefined) {
@@ -375,7 +520,7 @@ export default function App() {
       clearAction('seekforward');
       clearAction('seekto');
     };
-  }, [audioDoc?.title, activeBlockId, totalBlocks, isPlaying, currentTime, duration, playbackSpeed]);
+  }, [audioDoc?.title, activeBlockId, totalBlocks, isPlaying, playbackSpeed]);
 
   // Update MediaSession Position State
   useEffect(() => {
@@ -508,6 +653,8 @@ export default function App() {
 
     // If opening a different document than active audio session, load its details and resume position
     if (!audioDoc || audioDoc.id !== id) {
+      priorityAudioQueue.clearBlobUrls();
+      lastLoadedConfigRef.current = { docId: null, blockId: null, voice: null, model: null, speed: null };
       try {
         const docRes = await fetch(`/api/documents/${id}`);
         if (docRes.ok) {
@@ -518,11 +665,33 @@ export default function App() {
           setAudioDoc({ id, title: docTitle, totalBlocks: blocksCount });
           setTotalBlocks(blocksCount);
           setActiveBlockId(resumeIndex);
+          activeBlockRef.current = resumeIndex;
+
+          // Prime cache with initial block and next block
+          priorityAudioQueue.enqueue({
+            docId: id,
+            blockId: resumeIndex,
+            voice: selectedVoiceRef.current,
+            model: selectedModelRef.current,
+            speed: playbackSpeedRef.current,
+            priority: 5,
+          });
+          if (resumeIndex + 1 < blocksCount) {
+            priorityAudioQueue.enqueue({
+              docId: id,
+              blockId: resumeIndex + 1,
+              voice: selectedVoiceRef.current,
+              model: selectedModelRef.current,
+              speed: playbackSpeedRef.current,
+              priority: 5,
+            });
+          }
         }
       } catch {
         // fallback
       }
       setIsPlaying(false);
+      isPlayingRef.current = false;
       setCurrentAudioSrc('');
       if (audioRef.current) {
         audioRef.current.pause();
@@ -538,6 +707,9 @@ export default function App() {
 
   const handleDismissMiniPlayer = () => {
     setIsPlaying(false);
+    isPlayingRef.current = false;
+    lastLoadedConfigRef.current = { docId: null, blockId: null, voice: null, model: null, speed: null };
+    priorityAudioQueue.clearBlobUrls();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
@@ -550,9 +722,11 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${appTheme.page}`}>
-      {/* Hidden audio element */}
+      {/* Persistent Audio Element with lock-screen & background playback support */}
       <audio
         ref={audioRef}
+        preload="auto"
+        playsInline={true}
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
         onLoadedMetadata={(e) => {
           setDuration(e.currentTarget.duration);
@@ -562,31 +736,12 @@ export default function App() {
         onPlaying={() => {
           setIsLoadingAudio(false);
           setIsPlaying(true);
+          isPlayingRef.current = true;
         }}
         onPause={() => {
           // Handled in onEnded or user toggle
         }}
-        onEnded={() => {
-          if (sleepTimer === 'end_of_doc' && activeBlockId >= totalBlocks - 1) {
-            setIsPlaying(false);
-            setSleepTimer(null);
-            setSleepTimerRemaining(null);
-            return;
-          }
-          if (activeBlockId !== null && activeBlockId < totalBlocks - 1) {
-            if (interBlockPauseMs > 0) {
-              setTimeout(() => {
-                setActiveBlockId((prev) => prev + 1);
-                setIsPlaying(true);
-              }, interBlockPauseMs);
-            } else {
-              setActiveBlockId((prev) => prev + 1);
-              setIsPlaying(true);
-            }
-          } else {
-            setIsPlaying(false);
-          }
-        }}
+        onEnded={handleAudioEnded}
       />
 
       {editingDocId ? (
@@ -612,17 +767,7 @@ export default function App() {
               if (activeBlockId === id) {
                 handleTogglePlay();
               } else {
-                setActiveBlockId(id);
-                // Assign src if first time
-                if (!currentAudioSrc && audioRef.current) {
-                  const src = `/api/documents/${selectedDocId}/blocks/${id}/audio?voice=${selectedVoice}&model=${selectedModel}&speed=${playbackSpeed}`;
-                  setCurrentAudioSrc(src);
-                  setIsLoadingAudio(true);
-                  audioRef.current.src = src;
-                  audioRef.current.playbackRate = playbackSpeed;
-                  audioRef.current.load();
-                }
-                setIsPlaying(true);
+                playBlock(id, true);
               }
             }}
             settings={readerSettings}
