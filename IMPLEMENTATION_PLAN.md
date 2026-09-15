@@ -155,4 +155,4 @@
 - [x] Overhaul tag taxonomy prompt and post-validation in `backend/cleaner.py` (`llm_generate_title_and_tags`) to focus strictly on topical subject matter and forbid format/platform names.
 - [x] Add Source URL launcher in `ReaderView.jsx` and `LibraryView.jsx`.
 - [x] Add unit tests in `backend/tests/test_url_source_and_tagging.py` covering URL persistence, markdown link formatting, and topical tag generation.
-- [ ] Build frontend, deploy to `oracle-xmillionmax`, fix Om Swami note tags and source URL, and verify.
+- [x] Build frontend, deploy to `oracle-xmillionmax`, fix Om Swami note tags and source URL, and verify.
