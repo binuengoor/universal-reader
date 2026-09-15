@@ -24,7 +24,8 @@ import {
   Archive,
   Inbox,
   HelpCircle,
-  Type
+  Type,
+  ExternalLink
 } from 'lucide-react';
 import TagInput from './TagInput';
 import OmniIntakeModal from './OmniIntakeModal';
@@ -659,6 +660,18 @@ export default function LibraryView({ onSelectDocument, onEditDocument, onOpenSe
                         </button>
 
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                          {doc.source_url && (
+                            <a
+                              href={doc.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Open original source"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`p-1.5 ${t.iconMuted} hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition cursor-pointer`}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                          )}
                           {onEditDocument && (
                             <button
                               type="button"

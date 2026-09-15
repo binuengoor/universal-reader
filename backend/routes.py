@@ -759,7 +759,23 @@ async def invalidate_block_cache(doc_id: str, block_id: int):
     return {"status": "block_cache_invalidated", "doc_id": doc_id, "block_id": block_id, "files_removed": count}
 
 
-def get_all_library_tags() -> List[str]:
+NON_TOPICAL_TAGS = {
+    "reddit", "url", "web", "blog", "article", "pdf", "epub", "docx",
+    "text", "website", "link", "post", "document", "file", "reading",
+    "inbox", "archived", "note", "notes"
+}
+
+def is_topical_tag(tag: str) -> bool:
+    if not tag:
+        return False
+    t = tag.strip().lower()
+    if t in NON_TOPICAL_TAGS:
+        return False
+    if t.startswith("r/") or t.startswith("r-") or t.startswith("u/"):
+        return False
+    return True
+
+def get_all_library_tags(include_non_topical: bool = False) -> List[str]:
     """Retrieve all unique tags across all documents in the library."""
     unique = set()
     if not os.path.exists(BASE_DATA_DIR):
@@ -773,7 +789,9 @@ def get_all_library_tags() -> List[str]:
                         meta = json.load(f)
                         for t in meta.get("tags", []):
                             if t and str(t).strip():
-                                unique.add(str(t).strip().lower())
+                                norm = str(t).strip().lower()
+                                if include_non_topical or is_topical_tag(norm):
+                                    unique.add(norm)
                 except Exception:
                     pass
     return sorted(list(unique))
@@ -922,7 +940,7 @@ async def ingest_url(req: UrlDocRequest):
             raise HTTPException(status_code=400, detail="Reddit thread content is too short or empty")
 
         doc_id = generate_doc_id()
-        save_document(doc_id, title, "reddit", content, chunks, tags=tags, synopsis=synopsis)
+        save_document(doc_id, title, "reddit", content, chunks, tags=tags, synopsis=synopsis, source_url=url)
         return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
     downloaded = trafilatura.fetch_url(url)
@@ -946,12 +964,16 @@ async def ingest_url(req: UrlDocRequest):
 
     title, tags, synopsis = await _resolve_title_and_tags(extracted, req.title or meta_title, req.tags, default_title)
 
-    chunks = chunk_text(extracted)
+    # Prepend a clickable source link at the top of the note
+    source_header = f"**Source:** [{url}]({url})\n\n"
+    content_with_source = source_header + extracted
+
+    chunks = chunk_text(content_with_source)
     if not chunks:
         raise HTTPException(status_code=400, detail="Extracted content is too short or empty")
 
     doc_id = generate_doc_id()
-    save_document(doc_id, title, "url", extracted, chunks, tags=tags, synopsis=synopsis)
+    save_document(doc_id, title, "url", content_with_source, chunks, tags=tags, synopsis=synopsis, source_url=url)
     return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
 

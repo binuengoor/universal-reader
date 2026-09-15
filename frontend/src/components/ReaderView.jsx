@@ -14,7 +14,8 @@ import {
   Tag,
   Clock,
   LocateFixed,
-  List
+  List,
+  ExternalLink
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -458,6 +459,19 @@ export default function ReaderView({
               <FileEdit className="w-4 h-4 text-indigo-400" />
               <span className="hidden sm:inline">Edit</span>
             </button>
+          )}
+
+          {meta?.source_url && (
+            <a
+              href={meta.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition text-inherit flex items-center gap-1.5 text-xs font-medium border border-current/10"
+              title={`Open source: ${meta.source_url}`}
+            >
+              <ExternalLink className="w-4 h-4 text-blue-400" />
+              <span className="hidden sm:inline">Source</span>
+            </a>
           )}
 
           <button

@@ -400,52 +400,70 @@ async def llm_generate_title_and_tags(
     include_synopsis: bool = False
 ) -> Any:
     """
-    Generate a concise title and 1-3 broad category tags using an OpenAI-compatible LLM.
-    Enforces a strict global limit of at most 50 unique tags in the library:
-    - If existing_tags has >= 50 tags, the LLM MUST strictly select only from existing_tags.
-    - If existing_tags has < 50 tags, the LLM prefers existing tags and only creates a new one if necessary.
-    - Tags must be lowercase, alphanumeric/hyphenated words representing broad categories.
+    Generate a concise title and 1-3 topical category tags using an OpenAI-compatible LLM.
+    Enforces a strict global limit of at most 50 unique tags in the library.
+    Tags MUST represent topical subject matter (e.g. 'philosophy', 'health', 'cooking').
+    Platform/format names (reddit, url, blog, pdf, article, etc.) are ALWAYS forbidden.
     """
     if not content or not content.strip() or not llm_base_url:
         return None, []
 
-    existing = [t.strip().lower() for t in (existing_tags or []) if t and t.strip()]
+    # Platform/format names that must NEVER appear as tags
+    FORBIDDEN_TAGS = {
+        "reddit", "url", "web", "blog", "article", "pdf", "epub", "docx",
+        "text", "website", "link", "post", "document", "file", "reading",
+        "inbox", "archived", "note", "notes", "thread", "forum", "social",
+        "media", "news", "content", "page", "site"
+    }
+
+    # Filter existing tags to only topical ones for the LLM prompt
+    existing = [
+        t.strip().lower() for t in (existing_tags or [])
+        if t and t.strip() and t.strip().lower() not in FORBIDDEN_TAGS
+        and not t.strip().lower().startswith("r/")
+        and not t.strip().lower().startswith("u/")
+    ]
     unique_existing = sorted(list(set(existing)))
     tag_count = len(unique_existing)
+
+    forbidden_examples = ", ".join(sorted(FORBIDDEN_TAGS)[:10]) + ", r/*, u/*"
 
     if tag_count >= 50:
         tag_instruction = (
             f"CRITICAL CONSTRAINT: The library has reached its maximum global limit of 50 categories ({tag_count}/50).\n"
-            f"You MUST select 1 to 3 tags EXCLUSIVELY from the following list of existing categories. DO NOT invent or return any new tag outside this list:\n"
+            f"You MUST select 1 to 3 tags EXCLUSIVELY from the following existing TOPICAL categories. DO NOT invent any new tags:\n"
             f"{json.dumps(unique_existing)}"
         )
     elif tag_count > 0:
         tag_instruction = (
-            f"There are currently {tag_count}/50 categories in the library. PREFER selecting 1 to 3 tags from this existing list:\n"
+            f"There are currently {tag_count}/50 topical categories in the library.\n"
+            f"PREFER reusing existing tags ONLY if they genuinely describe the SUBJECT MATTER of this document:\n"
             f"{json.dumps(unique_existing)}\n"
-            f"Only create a new tag if none of the existing categories fit. "
-            f"A tag must be a single, broad high-level category (e.g. 'technology', 'science', 'philosophy', 'health', 'finance'), never hyper-specific keywords."
+            f"If none of the existing tags match the actual topic, CREATE a new topical tag instead — do not force-fit an existing tag."
         )
     else:
         tag_instruction = (
-            "Select 1 to 3 broad, high-level categorical tags for this note (e.g. 'technology', 'science', 'philosophy', 'health', 'news'). "
-            "Tags must be broad categories, not hyper-specific phrases."
+            "Select 1 to 3 broad, high-level topical category tags (e.g. 'philosophy', 'health', 'cooking', 'parenting', 'technology', 'finance', 'spirituality'). "
+            "Tags represent the SUBJECT MATTER of the document, not its format or source."
         )
 
     schema_desc = (
-        '{"title": "Descriptive Note Title", "tags": ["category1", "category2"], "synopsis": "A punchy 1-2 sentence core takeaway (120-180 characters)."}'
+        '{"title": "Descriptive Note Title", "tags": ["topic1", "topic2"], "synopsis": "A punchy 1-2 sentence core takeaway (120-180 characters)."}'
         if include_synopsis else
-        '{"title": "Descriptive Note Title", "tags": ["category1", "category2"]}'
+        '{"title": "Descriptive Note Title", "tags": ["topic1", "topic2"]}'
     )
 
     system_prompt = (
-        "You are an expert librarian and taxonomy classifier. Your job is to analyze the provided text and output a concise title and 1-3 category tags.\n"
-        "Guidelines:\n"
-        "1. Title: 3 to 8 words, descriptive, title case, no punctuation at the end.\n"
-        "2. Tags: 1 to 3 broad category tags. Must be lowercase, only letters, numbers, and hyphens (no hashtags, spaces, or emojis).\n"
-        f"3. {tag_instruction}\n"
-        f"4. You MUST respond with ONLY a valid JSON object matching this schema:\n"
-        f"{schema_desc}"
+        "You are an expert librarian and taxonomy classifier. Analyze the provided text and return a concise title and 1-3 TOPICAL category tags.\n"
+        "CRITICAL RULES FOR TAGS:\n"
+        "- Tags MUST describe the SUBJECT MATTER / TOPIC of the content (e.g. 'parenting', 'spirituality', 'productivity', 'machine-learning').\n"
+        f"- Tags MUST NOT be platform names, file formats, or source types. FORBIDDEN examples: {forbidden_examples}.\n"
+        "- Tags must be lowercase, only letters, numbers, and hyphens (no hashtags, spaces, or emojis).\n"
+        "- 1 to 3 tags only.\n"
+        f"Tag selection rule: {tag_instruction}\n"
+        "TITLE RULES:\n"
+        "- 3 to 8 words, descriptive, Title Case, no punctuation at end.\n"
+        f"Respond with ONLY a valid JSON object matching this schema:\n{schema_desc}"
     )
 
     sample_content = content[:3000].strip()
@@ -483,7 +501,7 @@ async def llm_generate_title_and_tags(
                 title = parsed.get("title")
                 tags = parsed.get("tags") or []
                 synopsis = parsed.get("synopsis")
-                
+
                 # Sanitize title
                 clean_title = str(title).strip() if title else None
                 if clean_title:
@@ -494,14 +512,21 @@ async def llm_generate_title_and_tags(
                 if clean_synopsis:
                     clean_synopsis = re.sub(r'[\r\n\t]+', ' ', clean_synopsis).strip()
 
-                # Sanitize tags
+                # Sanitize and post-filter tags — enforce topical-only
                 clean_tags = []
                 for t in tags:
                     norm = re.sub(r'[^a-z0-9\-]', '', str(t).lower().replace(' ', '-')).strip('-')
-                    if norm and norm not in clean_tags:
-                        if tag_count >= 50 and norm not in unique_existing:
-                            continue  # Skip illegal new tags when at 50 capacity
-                        clean_tags.append(norm)
+                    if not norm:
+                        continue
+                    if norm in FORBIDDEN_TAGS:
+                        continue  # Strip platform/format tags even if LLM returned them
+                    if norm.startswith("r-") or norm.startswith("u-"):
+                        continue
+                    if norm in clean_tags:
+                        continue
+                    if tag_count >= 50 and norm not in unique_existing:
+                        continue  # Skip illegal new tags when at 50 capacity
+                    clean_tags.append(norm)
 
                 if include_synopsis:
                     return clean_title, clean_tags[:3], clean_synopsis
