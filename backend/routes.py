@@ -14,6 +14,7 @@ from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
 from .tts import tts_client, get_audio_filename, UniversalTTSClient
 from .config import load_settings, save_settings
 from .cleaner import clean_text_for_speech, apply_glossary, llm_clean_text, llm_generate_title_and_tags, llm_generate_synopsis
+from .reddit import RedditClient
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
@@ -843,10 +844,55 @@ async def create_document(req: CreateDocRequest):
 
 @router.post("/url")
 async def ingest_url(req: UrlDocRequest):
-    """Ingest clean article markdown from a URL using trafilatura."""
+    """Ingest clean article markdown from a URL using trafilatura or dedicated Reddit extractor."""
     url = req.url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL cannot be empty")
+
+    if RedditClient.is_reddit_url(url):
+        reddit_client = RedditClient(load_settings())
+        reddit_res = await reddit_client.fetch(url)
+        if not reddit_res.success:
+            err_detail = reddit_res.error or "Failed to fetch Reddit thread"
+            raise HTTPException(
+                status_code=reddit_res.status_code if reddit_res.status_code and 400 <= reddit_res.status_code < 500 else 400,
+                detail=f"Reddit extraction failed: {err_detail}",
+            )
+
+        content = reddit_res.markdown
+        if not content.strip():
+            raise HTTPException(status_code=400, detail="Reddit thread content is empty")
+
+        default_title = reddit_res.title or "Reddit Post"
+
+        auto_tags = ["reddit"]
+        if reddit_res.subreddit:
+            auto_tags.append(f"r/{reddit_res.subreddit.lower()}")
+
+        combined_tags: List[str] = []
+        if req.tags:
+            for t in req.tags:
+                norm = t.strip().lower()
+                if norm and norm not in combined_tags:
+                    combined_tags.append(norm)
+        for t in auto_tags:
+            if t not in combined_tags:
+                combined_tags.append(t)
+
+        title, tags, synopsis = await _resolve_title_and_tags(
+            content,
+            req.title or reddit_res.title,
+            combined_tags,
+            default_title,
+        )
+
+        chunks = chunk_text(content)
+        if not chunks:
+            raise HTTPException(status_code=400, detail="Reddit thread content is too short or empty")
+
+        doc_id = generate_doc_id()
+        save_document(doc_id, title, "reddit", content, chunks, tags=tags, synopsis=synopsis)
+        return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
     downloaded = trafilatura.fetch_url(url)
     if not downloaded:
