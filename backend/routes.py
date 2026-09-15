@@ -13,7 +13,14 @@ from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
 from .tts import tts_client, get_audio_filename, UniversalTTSClient
 from .config import load_settings, save_settings
-from .cleaner import clean_text_for_speech, apply_glossary, llm_clean_text, llm_generate_title_and_tags, llm_generate_synopsis
+from .cleaner import (
+    clean_text_for_speech,
+    apply_glossary,
+    llm_clean_text,
+    llm_generate_title_and_tags,
+    llm_generate_synopsis,
+    llm_consolidate_reddit_comments,
+)
 from .reddit import RedditClient
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -850,7 +857,8 @@ async def ingest_url(req: UrlDocRequest):
         raise HTTPException(status_code=400, detail="URL cannot be empty")
 
     if RedditClient.is_reddit_url(url):
-        reddit_client = RedditClient(load_settings())
+        settings = load_settings()
+        reddit_client = RedditClient(settings)
         reddit_res = await reddit_client.fetch(url)
         if not reddit_res.success:
             err_detail = reddit_res.error or "Failed to fetch Reddit thread"
@@ -860,6 +868,29 @@ async def ingest_url(req: UrlDocRequest):
             )
 
         content = reddit_res.markdown
+
+        # Secondary Process: LLM synthesis and consolidation of Reddit comments
+        llm_base = settings.get("llm_base_url", "").strip()
+        llm_key = settings.get("llm_api_key", "").strip()
+        llm_model = settings.get("llm_model", "gpt-4o-mini").strip()
+
+        if reddit_res.has_comments and llm_base:
+            consolidated = await llm_consolidate_reddit_comments(
+                post_title=reddit_res.title,
+                post_content=reddit_res.post_markdown,
+                comments_markdown=reddit_res.comments_markdown,
+                llm_base_url=llm_base,
+                llm_api_key=llm_key,
+                llm_model=llm_model,
+            )
+            if consolidated and consolidated.strip():
+                content = (
+                    f"{reddit_res.post_markdown}\n\n"
+                    f"---\n"
+                    f"## Community Discussion & Takeaways\n\n"
+                    f"{consolidated.strip()}"
+                )
+
         if not content.strip():
             raise HTTPException(status_code=400, detail="Reddit thread content is empty")
 
