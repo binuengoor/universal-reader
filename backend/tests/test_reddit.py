@@ -135,12 +135,27 @@ def test_cookie_resolution(tmp_path):
 
 def test_format_thread():
     client = RedditClient(settings={"reddit_comment_depth": 3})
-    markdown, title, subreddit, author, score = client._format_thread(
+    (
+        markdown,
+        post_markdown,
+        comments_markdown,
+        has_comments,
+        title,
+        subreddit,
+        author,
+        score,
+    ) = client._format_thread(
         SAMPLE_REDDIT_JSON,
         original_url="https://www.reddit.com/r/google_antigravity/comments/1wh1uyl/whats_your_antigravity_workflow_heres_mine/",
     )
 
     assert title == "What's your Antigravity workflow? Here's mine."
+    assert subreddit == "google_antigravity"
+    assert author == "SecondHandLabs"
+    assert score == 10
+    assert has_comments is True
+    assert "SuperUser42" in comments_markdown
+    assert "SecondHandLabs" in post_markdown
     assert subreddit == "google_antigravity"
     assert author == "SecondHandLabs"
     assert score == 10

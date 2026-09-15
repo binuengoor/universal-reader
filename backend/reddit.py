@@ -59,6 +59,9 @@ class RedditFetchResult:
     success: bool
     url: str
     markdown: str = ""
+    post_markdown: str = ""
+    comments_markdown: str = ""
+    has_comments: bool = False
     title: str = ""
     subreddit: str = ""
     author: str = ""
@@ -212,12 +215,24 @@ class RedditClient:
                     error="Unexpected response structure from Reddit JSON API",
                 )
 
-            markdown, title, subreddit, author, score = self._format_thread(data, original_url=url)
+            (
+                markdown,
+                post_markdown,
+                comments_markdown,
+                has_comments,
+                title,
+                subreddit,
+                author,
+                score,
+            ) = self._format_thread(data, original_url=url)
 
             return RedditFetchResult(
                 success=True,
                 url=url,
                 markdown=markdown,
+                post_markdown=post_markdown,
+                comments_markdown=comments_markdown,
+                has_comments=has_comments,
                 title=title,
                 subreddit=subreddit,
                 author=author,
@@ -302,13 +317,19 @@ class RedditClient:
         comment_listing = data[1].get("data", {}).get("children", [])
         comment_lines = self._format_comments(comment_listing, current_depth=1)
 
-        if comment_lines:
-            lines.append("---")
-            lines.append("## Comments Section")
-            lines.append("")
-            lines.extend(comment_lines)
+        post_markdown = "\n".join(lines).strip()
+        comments_markdown = "\n".join(comment_lines).strip() if comment_lines else ""
+        has_comments = bool(comments_markdown)
 
-        return "\n".join(lines).strip(), title, subreddit, author, score
+        full_lines = list(lines)
+        if comment_lines:
+            full_lines.append("---")
+            full_lines.append("## Comments Section")
+            full_lines.append("")
+            full_lines.extend(comment_lines)
+
+        full_markdown = "\n".join(full_lines).strip()
+        return full_markdown, post_markdown, comments_markdown, has_comments, title, subreddit, author, score
 
     def _format_comments(
         self,
