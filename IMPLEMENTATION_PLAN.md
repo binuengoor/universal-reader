@@ -148,3 +148,11 @@
 - [x] Update `backend/reddit.py` to expose `post_markdown`, `comments_markdown`, and `has_comments` separately in `RedditFetchResult`.
 - [x] Integrate comment synthesis into `backend/routes.py` `POST /api/documents/url` with graceful fallback to raw comments.
 - [x] Add unit tests in `backend/tests/test_reddit.py` and verify against mock responses and the example Reddit share URL.
+
+## Phase 20: Source URL Preservation & Tagging Taxonomy Quality Overhaul
+- [x] Update `backend/chunking.py` to persist `source_url` in document `meta.json`.
+- [ ] Update `backend/routes.py` (`POST /api/documents/url` and `get_all_library_tags`) to format a clickable source link at the top of ingested notes, persist `source_url`, and filter platform/format tags from LLM taxonomy candidate list.
+- [ ] Overhaul tag taxonomy prompt and post-validation in `backend/cleaner.py` (`llm_generate_title_and_tags`) to focus strictly on topical subject matter and forbid format/platform names.
+- [ ] Add Source URL launcher in `ReaderView.jsx` and `LibraryView.jsx`.
+- [ ] Add unit tests in `backend/tests/test_url_source_and_tagging.py` covering URL persistence, markdown link formatting, and topical tag generation.
+- [ ] Build frontend, deploy to `oracle-xmillionmax`, fix Om Swami note tags and source URL, and verify.

@@ -113,7 +113,8 @@ def save_document(
     chunks: List[Dict],
     tags: Optional[List[str]] = None,
     llm_state: Optional[Dict] = None,
-    synopsis: Optional[str] = None
+    synopsis: Optional[str] = None,
+    source_url: Optional[str] = None
 ) -> str:
     """Save document metadata, raw markdown, and chunks in the storage directory."""
     doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
@@ -135,6 +136,7 @@ def save_document(
         "id": doc_id,
         "title": title,
         "source_type": source_type,
+        "source_url": source_url.strip() if (source_url and source_url.strip()) else None,
         "synopsis": synopsis,
         "tags": [t.strip().lower() for t in (tags or []) if t and t.strip()],
         "status": "inbox",
