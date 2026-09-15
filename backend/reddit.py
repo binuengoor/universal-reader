@@ -107,9 +107,11 @@ class RedditClient:
             return direct_id
 
         if _REDDIT_SHARE_PATTERN.search(url):
+            cookies = self._resolve_cookies()
+            if cookies:
+                client.cookies.update(cookies)
             try:
-                # Resolve share URL redirect
-                resp = await client.head(
+                resp = await client.get(
                     url,
                     headers=_BROWSER_HEADERS,
                     follow_redirects=True,
@@ -119,15 +121,6 @@ class RedditClient:
                 resolved_id = self.extract_direct_post_id(final_url)
                 if resolved_id:
                     return resolved_id
-
-                # Fallback to GET if HEAD didn't follow to final destination
-                resp = await client.get(
-                    url,
-                    headers=_BROWSER_HEADERS,
-                    follow_redirects=True,
-                    timeout=self._timeout,
-                )
-                return self.extract_direct_post_id(str(resp.url))
             except Exception as exc:
                 log.warning("Failed to resolve Reddit share redirect for %s: %s", url, exc)
 
@@ -176,6 +169,10 @@ class RedditClient:
                 return await self._fetch_with_client(new_client, url)
 
     async def _fetch_with_client(self, client: httpx.AsyncClient, url: str) -> RedditFetchResult:
+        cookies = self._resolve_cookies()
+        if cookies:
+            client.cookies.update(cookies)
+
         post_id = await self.extract_post_id(client, url)
         if not post_id:
             return RedditFetchResult(
@@ -188,9 +185,6 @@ class RedditClient:
             f"https://www.reddit.com/comments/{post_id}.json"
             f"?raw_json=1&limit={self._comment_limit}&sort=best"
         )
-        cookies = self._resolve_cookies()
-        if cookies:
-            client.cookies.update(cookies)
 
         try:
             resp = await client.get(

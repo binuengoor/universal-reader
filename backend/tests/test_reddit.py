@@ -113,12 +113,12 @@ async def test_extract_post_id_resolves_share_redirect():
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_resp = MagicMock()
     mock_resp.url = "https://www.reddit.com/r/google_antigravity/comments/1wh1uyl/whats_your_antigravity_workflow_heres_mine/?share_id=..."
-    mock_http.head.return_value = mock_resp
+    mock_http.get.return_value = mock_resp
 
     client = RedditClient(settings={})
     post_id = await client.extract_post_id(mock_http, "https://www.reddit.com/r/google_antigravity/s/QgktoBYeVl")
     assert post_id == "1wh1uyl"
-    mock_http.head.assert_awaited_once()
+    mock_http.get.assert_awaited_once()
 
 
 def test_cookie_resolution(tmp_path):
