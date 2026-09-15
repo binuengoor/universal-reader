@@ -139,6 +139,6 @@
 
 ## Phase 18: Dedicated Reddit Thread & Comment Ingestion
 - [x] Add Reddit configuration options (`reddit_session_cookie`, `reddit_credential_path`, `reddit_comment_limit`, `reddit_comment_depth`, `reddit_timeout`) to `backend/config.py`.
-- [ ] Implement `RedditClient` in `backend/reddit.py` with thread detection, share link resolution, cookie loading, comment tree recursion, and markdown formatting.
+- [x] Implement `RedditClient` in `backend/reddit.py` with thread detection, share link resolution, cookie loading, comment tree recursion, and markdown formatting.
 - [ ] Integrate Reddit extraction into `backend/routes.py` `POST /api/documents/url` with fallback and auto-tagging.
 - [ ] Implement unit tests in `backend/tests/test_reddit.py` and verify against mock responses and the example Reddit share URL.
