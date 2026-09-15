@@ -514,3 +514,74 @@ async def llm_generate_title_and_tags(
     if include_synopsis:
         return None, [], None
     return None, []
+
+
+async def llm_consolidate_reddit_comments(
+    post_title: str,
+    post_content: str,
+    comments_markdown: str,
+    llm_base_url: str = "",
+    llm_api_key: str = "",
+    llm_model: str = "gpt-4o-mini",
+    timeout: float = 35.0
+) -> Optional[str]:
+    """
+    Consolidate and synthesize a Reddit thread's comments into a cohesive, neatly laid-out
+    discussion section optimized for both visual reading and natural TTS listening.
+    Groups redundant remarks, summarizes multi-perspective viewpoints, and consolidates
+    nested discussions into coherent thematic points.
+    """
+    if not comments_markdown or not comments_markdown.strip() or not llm_base_url:
+        return None
+
+    system_prompt = (
+        "You are an expert editor creating clean, easy-to-read, and natural-sounding summaries of online discussions.\n"
+        "Analyze the provided Reddit post and its comments. Consolidate and synthesize the comments into a coherent, neatly laid-out discussion section.\n\n"
+        "Guidelines:\n"
+        "1. Start with an opening sentence: \"Consolidating all of the comments on this post, here is what people say:\"\n"
+        "2. Identify recurring themes, consensus opinions, key takeaways, and contrasting viewpoints.\n"
+        "3. Eliminate redundant information, low-value conversational chatter (e.g., 'thanks for sharing', '+1', 'this'), and off-topic noise.\n"
+        "4. Consolidate nested comment replies and sub-debates into cohesive single notes rather than back-and-forth snippets.\n"
+        "5. Attribute distinct ideas naturally in prose (e.g., 'A few commenters noted...', 'One user highlighted that...', 'Others cautioned that...').\n"
+        "6. Write in clear, flowing markdown paragraphs with bullet points. Optimize for both visual readability and natural text-to-speech listening (avoid raw markdown tables, URLs, or dense ASCII formatting).\n"
+        "7. Return ONLY the consolidated markdown text and nothing else."
+    )
+
+    post_excerpt = post_content[:3000].strip()
+    comments_excerpt = comments_markdown[:15000].strip()
+
+    endpoint = f"{llm_base_url.rstrip('/')}/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if llm_api_key:
+        headers["Authorization"] = f"Bearer {llm_api_key}"
+
+    payload = {
+        "model": llm_model or "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"Post Title: {post_title}\n\nPost Content:\n{post_excerpt}\n\nComments to Consolidate:\n{comments_excerpt}"
+            }
+        ],
+        "temperature": 0.3,
+        "max_tokens": 1200
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(endpoint, json=payload, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_answer = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if raw_answer:
+                    if raw_answer.startswith("```"):
+                        raw_answer = re.sub(r'^```[a-zA-Z0-9_-]*\n?', '', raw_answer)
+                        raw_answer = re.sub(r'\n?```$', '', raw_answer).strip()
+                    return raw_answer
+            else:
+                logger.warning(f"llm_consolidate_reddit_comments failed HTTP {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"llm_consolidate_reddit_comments error: {str(e)}")
+
+    return None
