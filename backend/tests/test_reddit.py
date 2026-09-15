@@ -272,3 +272,82 @@ def test_live_example_url_fetch():
     doc_id = data["id"]
     del_resp = client.delete(f"/api/documents/{doc_id}")
     assert del_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_llm_consolidate_reddit_comments_success():
+    from backend.cleaner import llm_consolidate_reddit_comments
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": "Consolidating all of the comments on this post, here is what people say:\n\nA few commenters agreed that planning is critical."
+                }
+            }
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
+        res = await llm_consolidate_reddit_comments(
+            post_title="Test Post",
+            post_content="Post text here.",
+            comments_markdown="### u/user1\nComment text.",
+            llm_base_url="https://api.openai.com/v1",
+            llm_api_key="sk-test",
+        )
+        assert res is not None
+        assert "Consolidating all of the comments on this post" in res
+
+
+def test_api_ingest_reddit_with_llm_consolidation():
+    with patch.object(
+        RedditClient,
+        "fetch",
+        new_callable=AsyncMock,
+        return_value=RedditFetchResult(
+            success=True,
+            url="https://www.reddit.com/r/google_antigravity/comments/1wh1uyl/test/",
+            markdown="# Post Title\n\nPost body\n\n---\n## Comments Section\n### u/c1\nRaw comment",
+            post_markdown="# Post Title\n\nPost body",
+            comments_markdown="### u/c1\nRaw comment",
+            has_comments=True,
+            title="Post Title",
+            subreddit="google_antigravity",
+            author="author1",
+            score=5,
+            status_code=200,
+        ),
+    ), patch(
+        "backend.routes.llm_consolidate_reddit_comments",
+        new_callable=AsyncMock,
+        return_value="Consolidating all of the comments on this post, here is what people say:\n\nCommenters were supportive.",
+    ), patch(
+        "backend.routes.load_settings",
+        return_value={
+            "llm_base_url": "https://api.groq.com/openai/v1",
+            "llm_api_key": "sk-test",
+            "llm_model": "test-model",
+        },
+    ):
+        client = TestClient(app)
+        resp = client.post(
+            "/api/documents/url",
+            json={"url": "https://www.reddit.com/r/google_antigravity/s/QgktoBYeVl"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        doc_id = data["id"]
+
+        # Fetch raw document to verify consolidated comments section
+        raw_resp = client.get(f"/api/documents/{doc_id}/raw")
+        assert raw_resp.status_code == 200
+        raw_text = raw_resp.json()["content"]
+        assert "## Community Discussion & Takeaways" in raw_text
+        assert "Consolidating all of the comments on this post, here is what people say:" in raw_text
+
+        # Clean up doc
+        del_resp = client.delete(f"/api/documents/{doc_id}")
+        assert del_resp.status_code == 200

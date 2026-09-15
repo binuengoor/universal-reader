@@ -147,4 +147,4 @@
 - [x] Add `llm_consolidate_reddit_comments` helper in `backend/cleaner.py` with custom system prompt and timeout handling.
 - [x] Update `backend/reddit.py` to expose `post_markdown`, `comments_markdown`, and `has_comments` separately in `RedditFetchResult`.
 - [x] Integrate comment synthesis into `backend/routes.py` `POST /api/documents/url` with graceful fallback to raw comments.
-- [ ] Add unit tests in `backend/tests/test_reddit.py` and verify against mock responses and the example Reddit share URL.
+- [x] Add unit tests in `backend/tests/test_reddit.py` and verify against mock responses and the example Reddit share URL.
