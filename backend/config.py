@@ -22,6 +22,11 @@ def load_settings() -> Dict[str, Any]:
         "llm_clean_enabled": False,
         "glossary": [],
         "inter_block_pause_ms": int(os.environ.get("INTER_BLOCK_PAUSE_MS", 300)),
+        "reddit_session_cookie": os.environ.get("REDDIT_SESSION_COOKIE", ""),
+        "reddit_credential_path": os.environ.get("REDDIT_CREDENTIAL_PATH", ""),
+        "reddit_comment_limit": int(os.environ.get("REDDIT_COMMENT_LIMIT", 50)),
+        "reddit_comment_depth": int(os.environ.get("REDDIT_COMMENT_DEPTH", 3)),
+        "reddit_timeout": float(os.environ.get("REDDIT_TIMEOUT", 15.0)),
     }
     # If CONFIG_FILE does not exist, check if legacy local path exists and copy over
     if not os.path.exists(CONFIG_FILE):
@@ -52,6 +57,18 @@ def load_settings() -> Dict[str, Any]:
         settings["inter_block_pause_ms"] = int(settings.get("inter_block_pause_ms", 300))
     except (ValueError, TypeError):
         settings["inter_block_pause_ms"] = 300
+    try:
+        settings["reddit_comment_limit"] = int(settings.get("reddit_comment_limit", 50))
+    except (ValueError, TypeError):
+        settings["reddit_comment_limit"] = 50
+    try:
+        settings["reddit_comment_depth"] = int(settings.get("reddit_comment_depth", 3))
+    except (ValueError, TypeError):
+        settings["reddit_comment_depth"] = 3
+    try:
+        settings["reddit_timeout"] = float(settings.get("reddit_timeout", 15.0))
+    except (ValueError, TypeError):
+        settings["reddit_timeout"] = 15.0
     if not isinstance(settings.get("scoped_voices"), list):
         settings["scoped_voices"] = []
     settings["scoped_voices_enabled"] = bool(settings.get("scoped_voices_enabled", False))
