@@ -189,12 +189,13 @@ class RedditClient:
             f"?raw_json=1&limit={self._comment_limit}&sort=best"
         )
         cookies = self._resolve_cookies()
+        if cookies:
+            client.cookies.update(cookies)
 
         try:
             resp = await client.get(
                 api_url,
                 headers=_BROWSER_HEADERS,
-                cookies=cookies,
                 timeout=self._timeout,
                 follow_redirects=True,
             )
