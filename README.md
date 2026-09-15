@@ -109,7 +109,7 @@ services:
     volumes:
       - ./data:/data
     environment:
-      - TTS_BASE_URL=http://universal-tts:8880
+      - TTS_BASE_URL=http://universal-speech:8880
       - TTS_API_KEY=your-tts-key-if-any
       - DEFAULT_MODEL=edge-tts
       - DEFAULT_VOICE=en-US-ChristopherNeural
