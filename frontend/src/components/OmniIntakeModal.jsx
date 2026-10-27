@@ -16,16 +16,20 @@ import {
 import TagInput from './TagInput';
 import { getTheme } from '../utils/theme';
 
-export default function OmniIntakeModal({
-  isOpen,
+export default function OmniIntakeModal(props) {
+  // Mount the dialog only while open, so its state starts fresh on every open
+  // without calling hooks conditionally.
+  if (!props.isOpen) return null;
+  return <OmniIntakeDialog {...props} />;
+}
+
+function OmniIntakeDialog({
   onClose,
   onSuccess,
   availableTags = [],
   initialShareData = null,
   theme = 'dark'
 }) {
-  if (!isOpen) return null;
-
   const t = getTheme(theme);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);

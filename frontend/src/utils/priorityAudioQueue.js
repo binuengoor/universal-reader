@@ -5,7 +5,22 @@
  * 1 = Foreground playback / active click (Highest, preempts queue)
  * 5 = Lookahead sliding buffer (N+1, N+2)
  * 10 = Background full-note audio generation (Lowest priority)
+ *
+ * Audio is always synthesized at 1.0x; playback speed is applied client-side via
+ * playbackRate, so one cached set of audio serves every speed. `speed` arguments are
+ * accepted for backwards compatibility but ignored.
  */
+
+/**
+ * Build the URL for a block's audio. `audioKey` is the block's content version from the
+ * API (chunks[i].audio_key); with it the server lets the browser cache the response forever,
+ * and a text edit produces a new URL instead of replaying stale audio.
+ */
+export function buildBlockAudioUrl(docId, blockId, voice, model, audioKey) {
+  const params = new URLSearchParams({ voice, model, speed: '1' });
+  if (audioKey) params.set('v', audioKey);
+  return `/api/documents/${docId}/blocks/${blockId}/audio?${params.toString()}`;
+}
 
 class PriorityAudioQueue {
   constructor() {
@@ -15,7 +30,46 @@ class PriorityAudioQueue {
     this.blobMap = new Map(); // cacheKey -> ObjectURL (in-memory audio blobs)
     this.activeAbortController = null;
     this.listeners = new Set();
-    this.fullDocTask = null; // { docId, total, completed, voice, model, speed, cancelled: false }
+    this.fullDocTask = null; // { docId, total, completed, voice, model, cancelled: false }
+    this.audioKeys = new Map(); // docId -> [audio_key per block]
+    this.pinnedUrl = null; // blob URL currently playing; never revoked by eviction
+  }
+
+  /** Register per-block content keys for a document; drops stale cached audio for it. */
+  setAudioKeys(docId, keys) {
+    if (!docId) return;
+    const prev = this.audioKeys.get(docId);
+    this.audioKeys.set(docId, Array.isArray(keys) ? keys : []);
+    if (prev && JSON.stringify(prev) !== JSON.stringify(keys)) {
+      this.forgetDocument(docId);
+    }
+  }
+
+  getAudioKey(docId, blockId) {
+    const keys = this.audioKeys.get(docId);
+    return keys ? keys[blockId] || '' : '';
+  }
+
+  /** Forget prefetched/in-memory audio for a document (e.g. after its text changed). */
+  forgetDocument(docId) {
+    const prefix = `${docId}_`;
+    for (const key of [...this.prefetchedSet]) {
+      if (key.startsWith(prefix)) this.prefetchedSet.delete(key);
+    }
+    for (const [key, url] of [...this.blobMap]) {
+      if (key.startsWith(prefix)) {
+        if (url !== this.pinnedUrl) {
+          try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+        }
+        this.blobMap.delete(key);
+      }
+    }
+    this.queue = this.queue.filter((item) => item.docId !== docId);
+  }
+
+  /** Mark the blob URL handed to the <audio> element so eviction never revokes it mid-play. */
+  pin(url) {
+    this.pinnedUrl = url && url.startsWith('blob:') ? url : null;
   }
 
   subscribe(callback) {
@@ -37,8 +91,8 @@ class PriorityAudioQueue {
     };
   }
 
-  getCacheKey(docId, blockId, voice, model, speed) {
-    return `${docId}_${blockId}_${voice}_${model}_${speed}`;
+  getCacheKey(docId, blockId, voice, model) {
+    return `${docId}_${blockId}_${voice}_${model}_${this.getAudioKey(docId, blockId)}`;
   }
 
   isCached(docId, blockId, voice, model, speed) {
@@ -53,6 +107,7 @@ class PriorityAudioQueue {
 
   clearBlobUrls() {
     for (const url of this.blobMap.values()) {
+      if (url === this.pinnedUrl) continue;
       try {
         URL.revokeObjectURL(url);
       } catch {
@@ -78,6 +133,7 @@ class PriorityAudioQueue {
         existing.priority = priority; // Elevate priority
         this.queue.sort((a, b) => a.priority - b.priority);
       }
+      if (onDone) existing.callbacks.push(onDone);
       return;
     }
 
@@ -89,7 +145,7 @@ class PriorityAudioQueue {
       speed,
       priority,
       cacheKey,
-      onDone,
+      callbacks: onDone ? [onDone] : [],
     });
 
     // Sort ascending: lower number = higher priority
@@ -108,7 +164,6 @@ class PriorityAudioQueue {
       completed: 0,
       voice,
       model,
-      speed,
       cancelled: false,
     };
 
@@ -161,10 +216,20 @@ class PriorityAudioQueue {
     const item = this.queue.shift();
     this.notify();
 
+    const finish = (ok) => {
+      for (const cb of item.callbacks) {
+        try { cb(ok); } catch { /* ignore */ }
+      }
+    };
+
     try {
-      const url = `/api/documents/${item.docId}/blocks/${item.blockId}/audio?voice=${encodeURIComponent(
-        item.voice
-      )}&model=${encodeURIComponent(item.model)}&speed=${item.speed}`;
+      const url = buildBlockAudioUrl(
+        item.docId,
+        item.blockId,
+        item.voice,
+        item.model,
+        this.getAudioKey(item.docId, item.blockId)
+      );
 
       this.activeAbortController = new AbortController();
       const res = await fetch(url, {
@@ -173,34 +238,37 @@ class PriorityAudioQueue {
         signal: this.activeAbortController.signal,
       });
 
-      if (res.ok) {
+      // Substitute audio from the gateway's fallback voice is not worth keeping.
+      const isFallback = res.headers.get('X-Fallback') === 'true';
+      if (res.ok && !isFallback) {
         // For lookahead sliding window (priority <= 5), create a local Blob URL
         // so lock-screen transitions are instantaneous and zero-network from memory
         if (item.priority <= 5) {
           const blob = await res.blob();
           const blobUrl = URL.createObjectURL(blob);
 
-          // Bounded cache (up to 30 items) to prevent high memory usage
+          // Bounded cache (up to 30 items) to prevent high memory usage.
+          // Never evict the blob that is currently playing.
           if (this.blobMap.size >= 30) {
-            const oldestKey = this.blobMap.keys().next().value;
-            const oldUrl = this.blobMap.get(oldestKey);
-            if (oldUrl) {
-              try { URL.revokeObjectURL(oldUrl); } catch {}
+            for (const [oldKey, oldUrl] of this.blobMap) {
+              if (oldUrl === this.pinnedUrl) continue;
+              try { URL.revokeObjectURL(oldUrl); } catch { /* ignore */ }
+              this.blobMap.delete(oldKey);
+              break;
             }
-            this.blobMap.delete(oldestKey);
           }
 
           this.blobMap.set(item.cacheKey, blobUrl);
         }
 
         this.prefetchedSet.add(item.cacheKey);
-        if (item.onDone) item.onDone(true);
+        finish(true);
       } else {
-        if (item.onDone) item.onDone(false);
+        finish(false);
       }
     } catch {
       // Failed: can retry later
-      if (item.onDone) item.onDone(false);
+      finish(false);
     } finally {
       this.activeAbortController = null;
       this.isProcessing = false;

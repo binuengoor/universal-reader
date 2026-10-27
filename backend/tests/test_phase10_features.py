@@ -48,8 +48,9 @@ def test_apply_glossary_and_phonetics():
 def test_document_status_and_progress():
     """Verify updating document status, favorites, and progress tracking."""
     doc_id = "test_phase10_status_1"
-    text = "Paragraph one for testing reading progress.\n\nParagraph two for second block."
+    text = ("Paragraph one for testing reading progress. " * 8).strip() + "\n\n" + ("Paragraph two for second block. " * 8).strip()
     chunks = chunk_text(text)
+    assert len(chunks) >= 2
     save_document(doc_id, "Status Test Doc", "text", text, chunks)
 
     # 1. Update status to reading and favorite to true
@@ -65,6 +66,12 @@ def test_document_status_and_progress():
     prog_data = res_prog.json()
     assert prog_data["last_block_index"] == 1
     assert prog_data["progress_pct"] > 0
+
+    # Out-of-range indices are clamped to the last block
+    res_clamped = client.patch(f"/api/documents/{doc_id}/progress", json={"last_block_index": 999, "progress_pct": 250})
+    assert res_clamped.json()["last_block_index"] == len(chunks) - 1
+    assert res_clamped.json()["progress_pct"] == 100.0
+    client.patch(f"/api/documents/{doc_id}/progress", json={"last_block_index": 1})
 
     # 3. Verify get_document includes updated fields
     get_res = client.get(f"/api/documents/{doc_id}")

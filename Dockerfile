@@ -3,7 +3,7 @@ FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY frontend/ ./
 RUN npm run build
@@ -33,8 +33,7 @@ RUN mkdir -p /data/documents
 # Environment defaults
 ENV PYTHONUNBUFFERED=1 \
     DATA_DIR=/data/documents \
-    TTS_BASE_URL=http://host.docker.internal:8000 \
-    PORT=9025
+    TTS_BASE_URL=http://host.docker.internal:8000
 
 EXPOSE 9025
 

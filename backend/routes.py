@@ -1,18 +1,32 @@
+import asyncio
 import hashlib
 import json
+import logging
 import os
 import shutil
+import uuid
 import trafilatura
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .parsers import parse_pdf, parse_docx, parse_epub, parse_text
 from .chunking import chunk_text, save_document, generate_doc_id, BASE_DATA_DIR
-from .tts import tts_client, get_audio_filename, UniversalTTSClient
-from .config import load_settings, save_settings
+from .tts import tts_client, get_audio_filename, is_tts_model_id, UniversalTTSClient
+from .config import load_settings, save_settings, mask_settings, SECRET_MASK
+from .storage import (
+    atomic_write_bytes,
+    atomic_write_json,
+    atomic_write_text,
+    is_valid_doc_id,
+    key_lock,
+    resolve_doc_dir,
+)
+from .net import fetch_url_safely, UnsafeUrlError
+from .audio_utils import concat_mp3
 from .cleaner import (
     clean_text_for_speech,
     apply_glossary,
@@ -23,7 +37,17 @@ from .cleaner import (
 )
 from .reddit import RedditClient
 
+log = logging.getLogger(__name__)
+
+MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
+
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+
+def _doc_dir(doc_id: str) -> str:
+    """Validated path of a document directory (never escapes BASE_DATA_DIR)."""
+    return resolve_doc_dir(BASE_DATA_DIR, doc_id)
+
 models_router = APIRouter(prefix="/api/models", tags=["models"])
 tags_router = APIRouter(prefix="/api/tags", tags=["tags"])
 
@@ -42,6 +66,10 @@ async def get_models(search: Optional[str] = None, q: Optional[str] = None):
             models = resp
         else:
             models = [resp]
+        models = [
+            m for m in models
+            if not isinstance(m, dict) or is_tts_model_id(str(m.get("id", "")))
+        ]
     except Exception as e:
         upstream_available = False
         err_msg = str(e)
@@ -144,15 +172,20 @@ class SettingsPayload(BaseModel):
     glossary: Optional[List[Dict[str, Any]]] = None
     inter_block_pause_ms: Optional[int] = None
 
+def _drop_masked(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Secrets are returned masked; a masked value posted back means 'unchanged'."""
+    return {k: v for k, v in data.items() if v != SECRET_MASK}
+
+
 @settings_router.get("")
 async def get_app_settings():
-    """Get current TTS and LLM settings."""
-    return load_settings()
+    """Get current TTS and LLM settings (secrets masked)."""
+    return mask_settings(load_settings())
 
 @settings_router.post("")
 async def update_app_settings(req: SettingsPayload):
     """Save updated TTS and LLM configuration settings."""
-    data = req.model_dump(exclude_unset=True)
+    data = _drop_masked(req.model_dump(exclude_unset=True))
     if "base_url" in data and "tts_base_url" not in data:
         data["tts_base_url"] = data["base_url"]
     if "api_key" in data and "tts_api_key" not in data:
@@ -161,15 +194,16 @@ async def update_app_settings(req: SettingsPayload):
         data["tts_default_model"] = data["default_model"]
     if "default_voice" in data and "tts_default_voice" not in data:
         data["tts_default_voice"] = data["default_voice"]
-    saved = save_settings(data)
+    saved = mask_settings(save_settings(data))
     return {"status": "saved", "settings": saved, **saved}
 
 @settings_router.post("/test")
 async def test_upstream_tts(req: SettingsPayload):
     """Test connection to upstream TTS service."""
     current = load_settings()
-    url_candidate = req.tts_base_url or req.base_url or current.get("tts_base_url", "")
-    key_candidate = req.tts_api_key if req.tts_api_key is not None else (req.api_key if req.api_key is not None else current.get("tts_api_key", ""))
+    req_data = _drop_masked(req.model_dump(exclude_unset=True))
+    url_candidate = req_data.get("tts_base_url") or req_data.get("base_url") or current.get("tts_base_url", "")
+    key_candidate = req_data.get("tts_api_key", req_data.get("api_key", current.get("tts_api_key", "")))
     test_url = (url_candidate or "").rstrip("/")
     test_client = UniversalTTSClient(base_url=test_url, api_key=key_candidate, timeout=10.0)
     try:
@@ -191,10 +225,11 @@ async def test_upstream_llm(req: SettingsPayload):
     """Test connection to OpenAI-compatible LLM endpoint."""
     import httpx
     current = load_settings()
-    base_url = (req.llm_base_url or current.get("llm_base_url", "")).rstrip("/")
+    req_data = _drop_masked(req.model_dump(exclude_unset=True))
+    base_url = (req_data.get("llm_base_url") or current.get("llm_base_url", "")).rstrip("/")
     if not base_url:
         return {"ok": False, "message": "LLM Base URL is empty"}
-    api_key = req.llm_api_key if req.llm_api_key is not None else current.get("llm_api_key", "")
+    api_key = req_data.get("llm_api_key", current.get("llm_api_key", ""))
     model = req.llm_model or current.get("llm_model", "gpt-4o-mini")
 
     endpoint = f"{base_url}/chat/completions"
@@ -254,7 +289,7 @@ class UpdateProgressRequest(BaseModel):
     progress_pct: Optional[float] = None
 
 @router.get("")
-async def list_documents(
+def list_documents(
     status: Optional[str] = None,
     favorite: Optional[bool] = None,
     tag: Optional[str] = None,
@@ -332,7 +367,7 @@ async def list_documents(
 @router.get("/{doc_id}")
 async def get_document(doc_id: str):
     """Retrieve full document metadata and chunks."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     meta_path = os.path.join(doc_dir, "meta.json")
     chunks_path = os.path.join(doc_dir, "chunks.json")
 
@@ -349,6 +384,12 @@ async def get_document(doc_id: str):
     with open(chunks_path, "r", encoding="utf-8") as f:
         chunks = json.load(f)
 
+    # Version key per block: changes whenever the text actually sent to TTS changes
+    # (edits, LLM cleaning, glossary). Clients put it in audio URLs so browser caches never go stale.
+    glossary = load_settings().get("glossary", [])
+    for chunk in chunks:
+        chunk["audio_key"] = _audio_key(_speech_text_for_chunk(chunk, glossary))
+
     return {
         "meta": meta,
         "chunks": chunks
@@ -357,7 +398,7 @@ async def get_document(doc_id: str):
 @router.patch("/{doc_id}/status")
 async def update_document_status(doc_id: str, req: UpdateStatusRequest):
     """Update document lifecycle status ('inbox', 'reading', 'archived') and favorite flag."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     meta_path = os.path.join(doc_dir, "meta.json")
     if not os.path.exists(doc_dir) or not os.path.exists(meta_path):
         raise HTTPException(status_code=404, detail="Document not found")
@@ -375,8 +416,7 @@ async def update_document_status(doc_id: str, req: UpdateStatusRequest):
         meta["favorite"] = bool(req.favorite)
 
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    atomic_write_json(meta_path, meta)
 
     return {
         "id": doc_id,
@@ -387,7 +427,7 @@ async def update_document_status(doc_id: str, req: UpdateStatusRequest):
 @router.patch("/{doc_id}/progress")
 async def update_document_progress(doc_id: str, req: UpdateProgressRequest):
     """Update document listening/reading progress and position."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     meta_path = os.path.join(doc_dir, "meta.json")
     if not os.path.exists(doc_dir) or not os.path.exists(meta_path):
         raise HTTPException(status_code=404, detail="Document not found")
@@ -396,11 +436,11 @@ async def update_document_progress(doc_id: str, req: UpdateProgressRequest):
         meta = json.load(f)
 
     block_count = meta.get("block_count", 1) or 1
-    idx = max(0, req.last_block_index)
+    idx = min(max(0, req.last_block_index), block_count - 1)
     meta["last_block_index"] = idx
 
     if req.progress_pct is not None:
-        meta["progress_pct"] = round(req.progress_pct, 1)
+        meta["progress_pct"] = round(min(100.0, max(0.0, req.progress_pct)), 1)
     else:
         calc_pct = ((idx + 1) / block_count) * 100
         meta["progress_pct"] = round(min(100.0, calc_pct), 1)
@@ -410,8 +450,7 @@ async def update_document_progress(doc_id: str, req: UpdateProgressRequest):
         meta["status"] = "reading"
 
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    atomic_write_json(meta_path, meta)
 
     return {
         "id": doc_id,
@@ -423,7 +462,7 @@ async def update_document_progress(doc_id: str, req: UpdateProgressRequest):
 @router.get("/{doc_id}/raw")
 async def get_raw_document(doc_id: str):
     """Retrieve raw markdown text for editing."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     doc_file = os.path.join(doc_dir, "document.md")
     meta_file = os.path.join(doc_dir, "meta.json")
     if not os.path.exists(doc_file) or not os.path.exists(meta_file):
@@ -444,7 +483,7 @@ async def get_raw_document(doc_id: str):
 @router.put("/{doc_id}")
 async def update_document(doc_id: str, req: UpdateDocRequest):
     """Update document raw text and title, re-chunk, and clear outdated cache."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     meta_file = os.path.join(doc_dir, "meta.json")
     if not os.path.exists(doc_dir) or not os.path.exists(meta_file):
         raise HTTPException(status_code=404, detail="Document not found")
@@ -472,16 +511,13 @@ async def update_document(doc_id: str, req: UpdateDocRequest):
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     # Write document.md
-    with open(os.path.join(doc_dir, "document.md"), "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(os.path.join(doc_dir, "document.md"), content)
 
     # Write chunks.json
-    with open(os.path.join(doc_dir, "chunks.json"), "w", encoding="utf-8") as f:
-        json.dump(chunks, f, indent=2)
+    atomic_write_json(os.path.join(doc_dir, "chunks.json"), chunks)
 
     # Write meta.json
-    with open(meta_file, "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    atomic_write_json(meta_file, meta)
 
     # Invalidate audio cache since text blocks changed
     cache_dir = os.path.join(doc_dir, "audio_cache")
@@ -501,15 +537,71 @@ async def update_document(doc_id: str, req: UpdateDocRequest):
         "status": "updated"
     }
 
+def _speech_text_for_chunk(chunk: Dict[str, Any], glossary: List[Dict[str, str]]) -> str:
+    block_text = chunk.get("text", "").strip()
+    raw_source = chunk.get("speech_text") or block_text
+    speech_text = clean_text_for_speech(raw_source, glossary=glossary)
+    if not speech_text.strip():
+        speech_text = clean_text_for_speech(block_text, glossary=glossary) or block_text
+    return speech_text
+
+
+def _audio_key(speech_text: str) -> str:
+    return hashlib.sha256(speech_text.encode("utf-8")).hexdigest()[:16]
+
+
+async def _get_or_synthesize_block_file(
+    cache_dir: str,
+    block_id: int,
+    speech_text: str,
+    voice: str,
+    model: str,
+    speed: float,
+    response_format: str = "mp3",
+) -> Tuple[Optional[str], Optional[bytes], bool]:
+    """
+    Returns (file_path, None, hit) for audio persisted on disk, or (None, audio, False)
+    for substitute audio from the gateway's fallback engine, which must not be cached
+    under the requested voice.
+    """
+    filename = get_audio_filename(block_id, voice, model, speed, speech_text)
+    file_path = os.path.join(cache_dir, filename)
+
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return file_path, None, True
+
+    # One synthesis per file: prefetch and playback often request the same block at once.
+    async with key_lock(file_path):
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            return file_path, None, True
+        audio = await tts_client.synthesize(
+            text=speech_text,
+            voice=voice,
+            model=model,
+            speed=speed,
+            response_format=response_format
+        )
+        if getattr(audio, "fallback", False):
+            log.warning(
+                "Gateway used fallback voice %s for block %s; not caching it as %s",
+                getattr(audio, "voice", "?"), block_id, voice,
+            )
+            return None, bytes(audio), False
+        os.makedirs(cache_dir, exist_ok=True)
+        await run_in_threadpool(atomic_write_bytes, file_path, bytes(audio))
+        return file_path, None, False
+
+
 async def _synthesize_or_get_cached_audio(
     doc_id: str,
     block_id: int,
     voice: str,
     model: str,
     speed: float,
-    response_format: str = "mp3"
+    response_format: str = "mp3",
+    version: Optional[str] = None,
 ):
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     if not os.path.isdir(doc_dir):
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -535,42 +627,35 @@ async def _synthesize_or_get_cached_audio(
     settings = load_settings()
     glossary = settings.get("glossary", [])
 
-    block_text = target_block.get("text", "").strip()
-    raw_source = target_block.get("speech_text") or block_text
-    speech_text = clean_text_for_speech(raw_source, glossary=glossary)
-    if not speech_text.strip():
-        speech_text = clean_text_for_speech(block_text, glossary=glossary) or block_text
-
+    speech_text = _speech_text_for_chunk(target_block, glossary)
     if not speech_text.strip():
         raise HTTPException(status_code=400, detail="Block contains no readable text")
 
     cache_dir = os.path.join(doc_dir, "audio_cache")
-    os.makedirs(cache_dir, exist_ok=True)
+    file_path, substitute, is_cache_hit = await _get_or_synthesize_block_file(
+        cache_dir, block_id, speech_text, voice, model, speed, response_format
+    )
 
-    filename = get_audio_filename(block_id, voice, model, speed, speech_text)
-    file_path = os.path.join(cache_dir, filename)
-
-    is_cache_hit = os.path.exists(file_path) and os.path.getsize(file_path) > 0
-
-    if not is_cache_hit:
-        audio_bytes = await tts_client.synthesize(
-            text=speech_text,
-            voice=voice,
-            model=model,
-            speed=speed,
-            response_format=response_format
+    if substitute is not None:
+        return Response(
+            content=substitute,
+            media_type="audio/mpeg",
+            headers={"X-Cache": "MISS", "X-Fallback": "true", "Cache-Control": "no-store"},
         )
-        with open(file_path, "wb") as f:
-            f.write(audio_bytes)
 
+    # Long-lived caching is only safe when the URL pins the exact text version.
+    if version and version == _audio_key(speech_text):
+        cache_control = "private, max-age=31536000, immutable"
+    else:
+        cache_control = "no-cache"
 
     return FileResponse(
         path=file_path,
         media_type="audio/mpeg",
-        filename=filename,
+        filename=os.path.basename(file_path),
         headers={
             "X-Cache": "HIT" if is_cache_hit else "MISS",
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": cache_control,
             "Accept-Ranges": "bytes"
         }
     )
@@ -598,16 +683,21 @@ async def get_block_audio(
     voice: str = "alloy",
     model: str = "tts-1",
     speed: float = 1.0,
-    response_format: str = "mp3"
+    response_format: str = "mp3",
+    v: Optional[str] = None,
 ):
-    """Retrieve or generate block audio via GET for browser audio elements."""
+    """
+    Retrieve or generate block audio via GET for browser audio elements.
+    `v` is the block's `audio_key`; when it matches, the response is cacheable forever.
+    """
     return await _synthesize_or_get_cached_audio(
         doc_id=doc_id,
         block_id=block_id,
         voice=voice,
         model=model,
         speed=speed,
-        response_format=response_format
+        response_format=response_format,
+        version=v,
     )
 
 @router.post("/bulk-delete")
@@ -616,8 +706,11 @@ async def bulk_delete_documents(req: BulkDeleteRequest):
     deleted_ids = []
     not_found_ids = []
     for doc_id in req.doc_ids:
-        doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
-        if os.path.exists(doc_dir):
+        if not is_valid_doc_id(doc_id):
+            not_found_ids.append(doc_id)
+            continue
+        doc_dir = _doc_dir(doc_id)
+        if os.path.isdir(doc_dir):
             shutil.rmtree(doc_dir)
             deleted_ids.append(doc_id)
         else:
@@ -632,8 +725,8 @@ async def bulk_delete_documents(req: BulkDeleteRequest):
 @router.delete("/{doc_id}")
 async def delete_document(doc_id: str):
     """Delete a document and all its cached audio."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
-    if not os.path.exists(doc_dir):
+    doc_dir = _doc_dir(doc_id)
+    if not os.path.isdir(doc_dir):
         raise HTTPException(status_code=404, detail="Document not found")
 
     shutil.rmtree(doc_dir)
@@ -650,7 +743,7 @@ async def export_full_audio(
     Concatenate all cached audio blocks for this document and return a single .mp3 download.
     Synthesizes any missing blocks on demand.
     """
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     if not os.path.isdir(doc_dir):
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -674,58 +767,44 @@ async def export_full_audio(
     glossary = settings.get("glossary", [])
 
     # Gather or synthesize all blocks
-    combined_audio = bytearray()
+    segments: List[bytes] = []
     for chunk in chunks:
-        block_id = chunk["id"]
-        block_text = chunk.get("text", "").strip()
-        raw_source = chunk.get("speech_text") or block_text
-        speech_text = clean_text_for_speech(raw_source, glossary=glossary)
+        speech_text = _speech_text_for_chunk(chunk, glossary)
         if not speech_text.strip():
-            speech_text = clean_text_for_speech(block_text, glossary=glossary) or block_text
-
-        if not speech_text:
             continue
 
-        filename = get_audio_filename(block_id, voice, model, speed, speech_text)
-        file_path = os.path.join(cache_dir, filename)
-
-        if not (os.path.exists(file_path) and os.path.getsize(file_path) > 0):
-            audio_bytes = await tts_client.synthesize(
-                text=speech_text,
-                voice=voice,
-                model=model,
-                speed=speed,
-                response_format="mp3"
+        file_path, substitute, _ = await _get_or_synthesize_block_file(
+            cache_dir, chunk["id"], speech_text, voice, model, speed, "mp3"
+        )
+        if substitute is not None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Voice '{voice}' is temporarily unavailable; export aborted to avoid mixing voices.",
             )
-            with open(file_path, "wb") as f:
-                f.write(audio_bytes)
-        else:
-            with open(file_path, "rb") as f:
-                audio_bytes = f.read()
+        with open(file_path, "rb") as f:
+            segments.append(f.read())
 
-
-        combined_audio.extend(audio_bytes)
+    combined_audio = await run_in_threadpool(concat_mp3, segments)
 
     # Clean title for filename
     raw_title = meta.get("title", "audiobook")
     safe_title = "".join(c for c in raw_title if c.isalnum() or c in (" ", "_", "-")).strip() or "document"
     export_filename = f"{safe_title}.mp3"
 
-    export_path = os.path.join(cache_dir, f"_export_{voice}_{model}_{speed}.mp3")
-    with open(export_path, "wb") as f:
-        f.write(combined_audio)
+    export_key = hashlib.sha256(f"{voice}|{model}|{speed}".encode("utf-8")).hexdigest()[:16]
+    export_path = os.path.join(cache_dir, f"_export_{export_key}.mp3")
+    await run_in_threadpool(atomic_write_bytes, export_path, combined_audio)
 
     return FileResponse(
         path=export_path,
         media_type="audio/mpeg",
         filename=export_filename,
-        headers={"Content-Disposition": f'attachment; filename="{export_filename}"'}
     )
 
 @router.delete("/{doc_id}/cache")
 async def invalidate_document_cache(doc_id: str):
     """Invalidate all cached audio files for a document."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     if not os.path.exists(doc_dir):
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -742,7 +821,7 @@ async def invalidate_document_cache(doc_id: str):
 @router.delete("/{doc_id}/blocks/{block_id}/cache")
 async def invalidate_block_cache(doc_id: str, block_id: int):
     """Invalidate cached audio files for a specific block."""
-    doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    doc_dir = _doc_dir(doc_id)
     if not os.path.exists(doc_dir):
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -864,6 +943,7 @@ async def create_document(req: CreateDocRequest):
 
     doc_id = generate_doc_id()
     save_document(doc_id, title, "text", content, chunks, tags=tags, synopsis=synopsis)
+    schedule_auto_clean(doc_id)
     return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
 
@@ -918,22 +998,18 @@ async def ingest_url(req: UrlDocRequest):
         if reddit_res.subreddit:
             auto_tags.append(f"r/{reddit_res.subreddit.lower()}")
 
-        combined_tags: List[str] = []
-        if req.tags:
-            for t in req.tags:
-                norm = t.strip().lower()
-                if norm and norm not in combined_tags:
-                    combined_tags.append(norm)
-        for t in auto_tags:
-            if t not in combined_tags:
-                combined_tags.append(t)
-
+        # Resolve topical tags from the user (or the LLM) first; source tags are added
+        # afterwards so they don't suppress LLM tagging.
+        user_tags = [t.strip().lower() for t in (req.tags or []) if t and t.strip()]
         title, tags, synopsis = await _resolve_title_and_tags(
             content,
             req.title or reddit_res.title,
-            combined_tags,
+            user_tags or None,
             default_title,
         )
+        for t in auto_tags:
+            if t not in tags:
+                tags.append(t)
 
         chunks = chunk_text(content)
         if not chunks:
@@ -941,20 +1017,30 @@ async def ingest_url(req: UrlDocRequest):
 
         doc_id = generate_doc_id()
         save_document(doc_id, title, "reddit", content, chunks, tags=tags, synopsis=synopsis, source_url=url)
+        schedule_auto_clean(doc_id)
         return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
-    downloaded = trafilatura.fetch_url(url)
+    try:
+        _final_url, downloaded = await fetch_url_safely(url)
+    except UnsafeUrlError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.warning("URL fetch failed for %s: %s", url, e)
+        raise HTTPException(status_code=400, detail=f"Failed to fetch content from URL: {url}")
     if not downloaded:
         raise HTTPException(status_code=400, detail=f"Failed to fetch content from URL: {url}")
 
-    extracted = trafilatura.extract(downloaded, include_comments=False, output_format="txt")
+    # Extraction is CPU-bound; keep it off the event loop so audio keeps streaming.
+    extracted = await run_in_threadpool(
+        trafilatura.extract, downloaded, include_comments=False, output_format="txt"
+    )
     if not extracted or not extracted.strip():
         raise HTTPException(status_code=400, detail="Could not extract readable article text from this URL")
 
     # Check extracted metadata title if user didn't supply one
     meta_title = None
     if not (req.title and req.title.strip()):
-        metadata = trafilatura.extract_metadata(downloaded)
+        metadata = await run_in_threadpool(trafilatura.extract_metadata, downloaded)
         if metadata and metadata.title:
             meta_title = metadata.title.strip()
 
@@ -974,6 +1060,7 @@ async def ingest_url(req: UrlDocRequest):
 
     doc_id = generate_doc_id()
     save_document(doc_id, title, "url", content_with_source, chunks, tags=tags, synopsis=synopsis, source_url=url)
+    schedule_auto_clean(doc_id)
     return {"id": doc_id, "title": title, "block_count": len(chunks), "tags": tags, "synopsis": synopsis}
 
 
@@ -984,27 +1071,35 @@ async def upload_file(
     tags: Optional[str] = Form(None)
 ):
     """Upload and parse PDF, DOCX, ePub, or plain text / markdown file."""
-    filename = file.filename or "uploaded_file"
+    filename = os.path.basename(file.filename or "uploaded_file")
     ext = os.path.splitext(filename)[1].lower()
-    content_bytes = await file.read()
+    parsers = {".pdf": parse_pdf, ".docx": parse_docx, ".epub": parse_epub, ".txt": parse_text, ".md": parse_text}
+    if ext not in parsers:
+        raise HTTPException(status_code=400, detail=f"Unsupported file format: {ext}. Supported: .pdf, .docx, .epub, .md, .txt")
+
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    if file.size is not None and file.size > limit:
+        raise HTTPException(status_code=413, detail=f"File exceeds the {MAX_UPLOAD_MB} MB upload limit")
+    buf = bytearray()
+    while True:
+        piece = await file.read(1024 * 1024)
+        if not piece:
+            break
+        buf.extend(piece)
+        if len(buf) > limit:
+            raise HTTPException(status_code=413, detail=f"File exceeds the {MAX_UPLOAD_MB} MB upload limit")
+    content_bytes = bytes(buf)
 
     if not content_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    if ext == ".pdf":
-        text = parse_pdf(content_bytes)
-        source_type = "pdf"
-    elif ext == ".docx":
-        text = parse_docx(content_bytes)
-        source_type = "docx"
-    elif ext == ".epub":
-        text = parse_epub(content_bytes)
-        source_type = "epub"
-    elif ext in [".txt", ".md"]:
-        text = parse_text(content_bytes)
-        source_type = ext.replace(".", "")
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported file format: {ext}. Supported: .pdf, .docx, .epub, .md, .txt")
+    try:
+        # Parsing PDFs/EPUBs is CPU-heavy: run it in a worker thread.
+        text = await run_in_threadpool(parsers[ext], content_bytes)
+    except Exception as e:
+        log.warning("Failed to parse uploaded %s: %s", ext, e)
+        raise HTTPException(status_code=400, detail=f"Could not parse {ext} file: it may be corrupt or encrypted")
+    source_type = ext.replace(".", "")
 
     if not text.strip():
         raise HTTPException(status_code=400, detail="Could not extract readable text from uploaded file")
@@ -1019,6 +1114,7 @@ async def upload_file(
 
     doc_id = generate_doc_id()
     save_document(doc_id, resolved_title, source_type, text, chunks, tags=resolved_tags, synopsis=resolved_synopsis)
+    schedule_auto_clean(doc_id)
     return {"id": doc_id, "title": resolved_title, "block_count": len(chunks), "tags": resolved_tags, "synopsis": resolved_synopsis}
 
 
@@ -1026,33 +1122,41 @@ class BatchLlmRequest(BaseModel):
     job_type: str  # 'title' | 'tags' | 'synopsis' | 'clean_text' | 'all'
     doc_ids: Optional[List[str]] = None
     overwrite: bool = False
+    background: bool = False  # True: return a job id immediately and poll /api/jobs/{id}
 
 
-@router.post("/batch-llm")
-async def run_batch_llm_job(req: BatchLlmRequest):
-    """
-    Run bulk background/batch LLM tasks on documents:
-    - 'title': re-evaluate or generate titles
-    - 'tags': re-evaluate categories with 50-tag constraint
-    - 'clean_text': re-generate speech_text for audio chunks using LLM
-    - 'all': full optimization pass
-    """
+class SuggestRequest(BaseModel):
+    content: str = Field(..., max_length=500_000)
+
+
+# In-memory registry of background LLM jobs (single-user app; lost on restart by design).
+_jobs: Dict[str, Dict[str, Any]] = {}
+_MAX_JOBS = 50
+
+
+async def _process_batch(
+    job_type: str,
+    doc_ids: Optional[List[str]],
+    overwrite: bool,
+    progress_cb=None,
+) -> Dict[str, Any]:
     settings = load_settings()
     llm_base = settings.get("llm_base_url", "").strip()
     llm_key = settings.get("llm_api_key", "").strip()
     llm_model = settings.get("llm_model", "gpt-4o-mini").strip()
+    llm_prompt = (settings.get("llm_prompt") or "").strip() or None
 
     if not llm_base:
         raise HTTPException(status_code=400, detail="LLM Base URL is not configured in Settings")
 
     all_docs = []
     if not os.path.exists(BASE_DATA_DIR):
-        return {"status": "completed", "processed_count": 0, "results": []}
+        return {"status": "completed", "job_type": job_type, "processed_count": 0, "skipped_count": 0, "total_evaluated": 0, "results": []}
 
-    target_ids = set(req.doc_ids) if req.doc_ids else None
+    target_ids = set(doc_ids) if doc_ids else None
 
     for entry in os.scandir(BASE_DATA_DIR):
-        if entry.is_dir():
+        if entry.is_dir() and is_valid_doc_id(entry.name):
             if target_ids is None or entry.name in target_ids:
                 all_docs.append(entry.name)
 
@@ -1060,8 +1164,10 @@ async def run_batch_llm_job(req: BatchLlmRequest):
     processed_count = 0
     skipped_count = 0
 
-    for doc_id in all_docs:
-        doc_dir = os.path.join(BASE_DATA_DIR, doc_id)
+    for index, doc_id in enumerate(all_docs):
+        if progress_cb:
+            progress_cb(index, len(all_docs))
+        doc_dir = _doc_dir(doc_id)
         meta_path = os.path.join(doc_dir, "meta.json")
         doc_file = os.path.join(doc_dir, "document.md")
         chunks_path = os.path.join(doc_dir, "chunks.json")
@@ -1091,18 +1197,18 @@ async def run_batch_llm_job(req: BatchLlmRequest):
             result_item = {"id": doc_id, "title": meta.get("title")}
 
             # 1 & 2. Title and Tag generation
-            need_title = req.job_type in ("title", "all")
-            need_tags = req.job_type in ("tags", "all")
+            need_title = job_type in ("title", "all")
+            need_tags = job_type in ("tags", "all")
 
             curr_title = meta.get("title", "")
             is_default_title = curr_title.startswith("Doc - ") or curr_title.startswith("Web - ")
             should_run_title = need_title and (
-                req.overwrite or (llm_state.get("title_hash") != content_hash and (is_default_title or not curr_title))
+                overwrite or (llm_state.get("title_hash") != content_hash and (is_default_title or not curr_title))
             )
 
             curr_tags = meta.get("tags", [])
             should_run_tags = need_tags and (
-                req.overwrite or (llm_state.get("tags_hash") != content_hash and not curr_tags)
+                overwrite or (llm_state.get("tags_hash") != content_hash and not curr_tags)
             )
 
             if should_run_title or should_run_tags:
@@ -1129,8 +1235,8 @@ async def run_batch_llm_job(req: BatchLlmRequest):
             # 3. Synopsis generation
             curr_synopsis = meta.get("synopsis")
             should_run_synopsis = (
-                (req.job_type == "synopsis" and (req.overwrite or not curr_synopsis)) or
-                (req.job_type == "all" and req.overwrite)
+                (job_type == "synopsis" and (overwrite or not curr_synopsis)) or
+                (job_type == "all" and overwrite)
             )
 
             if should_run_synopsis:
@@ -1147,8 +1253,8 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                     modified = True
 
             # 4. Clean text re-chunking
-            if req.job_type in ("clean_text", "all") and os.path.exists(chunks_path):
-                should_run_clean = req.overwrite or (llm_state.get("speech_hash") != content_hash)
+            if job_type in ("clean_text", "all") and os.path.exists(chunks_path):
+                should_run_clean = overwrite or (llm_state.get("speech_hash") != content_hash)
                 if should_run_clean:
                     with open(chunks_path, "r", encoding="utf-8") as cf:
                         chunks = json.load(cf)
@@ -1158,14 +1264,15 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                         if raw_block:
                             block_hash = hashlib.sha256(raw_block.encode("utf-8")).hexdigest()
                             # If not overwrite and block was already cleaned with matching hash, skip LLM call
-                            if not req.overwrite and c.get("speech_cleaned") and c.get("raw_hash") == block_hash:
+                            if not overwrite and c.get("speech_cleaned") and c.get("raw_hash") == block_hash:
                                 continue
 
                             cleaned = await llm_clean_text(
                                 text=raw_block,
                                 llm_base_url=llm_base,
                                 llm_api_key=llm_key,
-                                llm_model=llm_model
+                                llm_model=llm_model,
+                                prompt=llm_prompt,
                             )
                             if cleaned != c.get("speech_text") or not c.get("speech_cleaned"):
                                 c["speech_text"] = cleaned
@@ -1174,8 +1281,7 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                                 chunks_modified = True
 
                     if chunks_modified:
-                        with open(chunks_path, "w", encoding="utf-8") as cf:
-                            json.dump(chunks, cf, indent=2)
+                        atomic_write_json(chunks_path, chunks)
                         modified = True
                         result_item["speech_text_updated"] = True
                     llm_state["speech_hash"] = content_hash
@@ -1184,8 +1290,7 @@ async def run_batch_llm_job(req: BatchLlmRequest):
                 llm_state["last_processed_at"] = datetime.now(timezone.utc).isoformat()
                 meta["llm_state"] = llm_state
                 meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta, f, indent=2)
+                atomic_write_json(meta_path, meta)
                 processed_count += 1
                 results.append(result_item)
             else:
@@ -1196,7 +1301,7 @@ async def run_batch_llm_job(req: BatchLlmRequest):
 
     return {
         "status": "completed",
-        "job_type": req.job_type,
+        "job_type": job_type,
         "processed_count": processed_count,
         "skipped_count": skipped_count,
         "total_evaluated": len(all_docs),
@@ -1204,9 +1309,103 @@ async def run_batch_llm_job(req: BatchLlmRequest):
     }
 
 
+def _start_job(job_type: str, doc_ids: Optional[List[str]], overwrite: bool) -> Dict[str, Any]:
+    job_id = uuid.uuid4().hex[:12]
+    job: Dict[str, Any] = {
+        "id": job_id,
+        "job_type": job_type,
+        "status": "running",
+        "done": 0,
+        "total": None,
+        "result": None,
+        "error": None,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    def _progress(done: int, total: int) -> None:
+        job["done"], job["total"] = done, total
+
+    async def _run() -> None:
+        try:
+            job["result"] = await _process_batch(job_type, doc_ids, overwrite, progress_cb=_progress)
+            job["done"] = job["result"].get("total_evaluated", job["done"])
+            job["status"] = "completed"
+        except HTTPException as e:
+            job["status"], job["error"] = "failed", e.detail
+        except Exception as e:  # pragma: no cover - defensive
+            log.exception("Background LLM job %s failed", job_id)
+            job["status"], job["error"] = "failed", str(e)
+
+    if len(_jobs) >= _MAX_JOBS:
+        for old_id in [k for k, v in _jobs.items() if v["status"] != "running"][: len(_jobs) - _MAX_JOBS + 1]:
+            _jobs.pop(old_id, None)
+    _jobs[job_id] = job
+    job["task"] = asyncio.get_running_loop().create_task(_run())
+    return job
+
+
+def _public_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in job.items() if k != "task"}
+
+
+def schedule_auto_clean(doc_id: str) -> None:
+    """If 'Enable AI Text Cleaning' is on, rewrite the new document's speech text in the background."""
+    settings = load_settings()
+    if settings.get("llm_clean_enabled") and (settings.get("llm_base_url") or "").strip():
+        _start_job("clean_text", [doc_id], False)
+
+
+@router.post("/batch-llm")
+async def run_batch_llm_job(req: BatchLlmRequest):
+    """
+    Run bulk LLM tasks on documents:
+    - 'title': re-evaluate or generate titles
+    - 'tags': re-evaluate categories with 50-tag constraint
+    - 'clean_text': re-generate speech_text for audio chunks using LLM
+    - 'all': full optimization pass
+    With `background: true` the job runs server-side and is polled via GET /api/jobs/{id}.
+    """
+    if req.background:
+        if not (load_settings().get("llm_base_url") or "").strip():
+            raise HTTPException(status_code=400, detail="LLM Base URL is not configured in Settings")
+        return _public_job(_start_job(req.job_type, req.doc_ids, req.overwrite))
+    return await _process_batch(req.job_type, req.doc_ids, req.overwrite)
+
+
+@router.post("/suggest")
+async def suggest_metadata(req: SuggestRequest):
+    """Suggest title, tags and synopsis for unsaved editor content without modifying any document."""
+    settings = load_settings()
+    llm_base = settings.get("llm_base_url", "").strip()
+    if not llm_base:
+        raise HTTPException(status_code=400, detail="LLM Base URL is not configured in Settings")
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    title, tags, synopsis = await llm_generate_title_and_tags(
+        content=req.content,
+        existing_tags=await run_in_threadpool(get_all_library_tags),
+        llm_base_url=llm_base,
+        llm_api_key=settings.get("llm_api_key", "").strip(),
+        llm_model=settings.get("llm_model", "gpt-4o-mini").strip(),
+        include_synopsis=True,
+    )
+    return {"title": title, "tags": tags or [], "synopsis": synopsis}
+
+
+jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+@jobs_router.get("/{job_id}")
+async def get_job(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return _public_job(job)
+
+
 # Tags Router Endpoints
 @tags_router.get("")
-async def list_tags():
+def list_tags():
     """Retrieve all library tags with usage counts and capacity stats."""
     tag_counts = {}
     total_docs = 0
@@ -1242,7 +1441,7 @@ class RenameTagRequest(BaseModel):
 
 
 @tags_router.post("/rename")
-async def rename_or_merge_tag(req: RenameTagRequest):
+def rename_or_merge_tag(req: RenameTagRequest):
     """
     Rename or merge a tag across all documents in the library.
     Helps maintain clean taxonomy under 50 categories.
@@ -1271,8 +1470,7 @@ async def rename_or_merge_tag(req: RenameTagRequest):
                                     deduped.append(t)
                             meta["tags"] = deduped
                             meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-                            with open(meta_path, "w", encoding="utf-8") as f:
-                                json.dump(meta, f, indent=2)
+                            atomic_write_json(meta_path, meta)
                             updated_docs += 1
                     except Exception:
                         pass

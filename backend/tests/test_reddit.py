@@ -256,6 +256,7 @@ def test_api_ingest_reddit_url_mocked(tmp_path):
         assert del_resp.status_code == 200
 
 
+@pytest.mark.network
 def test_live_example_url_fetch():
     """Live verification using the actual example Reddit URL."""
     client = TestClient(app)

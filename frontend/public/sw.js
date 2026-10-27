@@ -1,4 +1,4 @@
-const CACHE_NAME = 'universal-reader-cache-v3';
+const CACHE_NAME = 'universal-reader-cache-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -51,13 +51,16 @@ self.addEventListener('fetch', (event) => {
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const responseToCache = networkResponse.clone();
+            const responseToScan = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, responseToCache);
             });
+            responseToScan.text().then(pruneStaleAssets).catch(() => {});
           }
           return networkResponse;
         })
-        .catch(() => caches.match(event.request) || caches.match('/index.html'))
+        // caches.match() returns a Promise (always truthy), so chain explicitly
+        .catch(async () => (await caches.match(event.request)) || (await caches.match('/index.html')) || Response.error())
     );
     return;
   }
@@ -81,3 +84,15 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Hashed /assets/* files from previous builds are never requested again; prune the
+// ones the freshly fetched index.html no longer references so the cache stays bounded.
+async function pruneStaleAssets(html) {
+  const cache = await caches.open(CACHE_NAME);
+  for (const request of await cache.keys()) {
+    const path = new URL(request.url).pathname;
+    if (path.startsWith('/assets/') && !html.includes(path)) {
+      await cache.delete(request);
+    }
+  }
+}

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -18,7 +19,8 @@ from backend.config import load_settings
 
 log = logging.getLogger(__name__)
 
-# URL regex for Reddit thread matching
+# URL patterns for Reddit thread matching. Always anchored at the start of the URL
+# (re.match) so a Reddit URL embedded in another site's query string never matches.
 _REDDIT_THREAD_PATTERN = re.compile(
     r"https?://(?:(?:www|old|new|np)\.)?reddit\.com/(?:r/[^/]+/)?comments/([a-z0-9]+)",
     re.IGNORECASE,
@@ -35,6 +37,22 @@ _REDDIT_SHARE_PATTERN = re.compile(
     r"https?://(?:(?:www|old|new|np)\.)?reddit\.com/(?:r/[^/]+/)?s/([a-zA-Z0-9]+)",
     re.IGNORECASE,
 )
+
+_REDDIT_HOSTS = {"reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "np.reddit.com", "redd.it"}
+_COOKIE_DOMAIN = ".reddit.com"
+
+
+def _is_reddit_host(url: str) -> bool:
+    try:
+        host = (urlsplit(url.strip()).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in _REDDIT_HOSTS
+
+
+def _match(pattern: re.Pattern, url: str) -> Optional[re.Match]:
+    url = url.strip()
+    return pattern.match(url) if _is_reddit_host(url) else None
 
 # Standard browser fingerprint headers (Chrome 133 / macOS)
 _BROWSER_HEADERS: dict[str, str] = {
@@ -83,22 +101,22 @@ class RedditClient:
     def is_reddit_url(url: str) -> bool:
         """Check if a given URL is a Reddit post, thread, or share link."""
         return bool(
-            _REDDIT_THREAD_PATTERN.search(url)
-            or _REDDIT_SHORT_PATTERN.search(url)
-            or _REDDIT_GALLERY_PATTERN.search(url)
-            or _REDDIT_SHARE_PATTERN.search(url)
+            _match(_REDDIT_THREAD_PATTERN, url)
+            or _match(_REDDIT_SHORT_PATTERN, url)
+            or _match(_REDDIT_GALLERY_PATTERN, url)
+            or _match(_REDDIT_SHARE_PATTERN, url)
         )
 
     @staticmethod
     def extract_direct_post_id(url: str) -> str | None:
         """Extract the base36 post ID from a standard Reddit URL without network calls."""
-        match = _REDDIT_THREAD_PATTERN.search(url)
+        match = _match(_REDDIT_THREAD_PATTERN, url)
         if match:
             return match.group(1)
-        match = _REDDIT_SHORT_PATTERN.search(url)
+        match = _match(_REDDIT_SHORT_PATTERN, url)
         if match:
             return match.group(1)
-        match = _REDDIT_GALLERY_PATTERN.search(url)
+        match = _match(_REDDIT_GALLERY_PATTERN, url)
         if match:
             return match.group(1)
         return None
@@ -109,10 +127,8 @@ class RedditClient:
         if direct_id:
             return direct_id
 
-        if _REDDIT_SHARE_PATTERN.search(url):
-            cookies = self._resolve_cookies()
-            if cookies:
-                client.cookies.update(cookies)
+        if _match(_REDDIT_SHARE_PATTERN, url):
+            self._apply_cookies(client)
             try:
                 resp = await client.get(
                     url,
@@ -128,6 +144,11 @@ class RedditClient:
                 log.warning("Failed to resolve Reddit share redirect for %s: %s", url, exc)
 
         return None
+
+    def _apply_cookies(self, client: httpx.AsyncClient) -> None:
+        """Attach Reddit auth cookies scoped to reddit.com only, so redirects elsewhere never see them."""
+        for name, value in self._resolve_cookies().items():
+            client.cookies.set(name, value, domain=_COOKIE_DOMAIN)
 
     def _resolve_cookies(self) -> dict[str, str]:
         """Resolve Reddit authentication cookies from settings or local credentials file."""
@@ -172,9 +193,7 @@ class RedditClient:
                 return await self._fetch_with_client(new_client, url)
 
     async def _fetch_with_client(self, client: httpx.AsyncClient, url: str) -> RedditFetchResult:
-        cookies = self._resolve_cookies()
-        if cookies:
-            client.cookies.update(cookies)
+        self._apply_cookies(client)
 
         post_id = await self.extract_post_id(client, url)
         if not post_id:
