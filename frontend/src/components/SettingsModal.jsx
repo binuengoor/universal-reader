@@ -268,17 +268,33 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated, them
       setJobResult(null);
       setError(null);
 
+      // Runs server-side as a background job; poll for progress so long library-wide
+      // jobs survive proxy timeouts and closing this dialog.
       const res = await fetch('/api/documents/batch-llm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           job_type: jobType,
-          overwrite: jobOverwrite
+          overwrite: jobOverwrite,
+          background: true
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Batch job failed');
+      const started = await res.json();
+      if (!res.ok) throw new Error(started.detail || 'Batch job failed');
+
+      let job = started;
+      while (job.status === 'running') {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const pollRes = await fetch(`/api/jobs/${started.id}`);
+        if (!pollRes.ok) throw new Error('Lost track of the batch job (server restarted?)');
+        job = await pollRes.json();
+        if (job.total) {
+          setJobResult({ success: true, message: `Batch job '${jobType}' running: ${job.done}/${job.total} documents...` });
+        }
+      }
+      if (job.status !== 'completed') throw new Error(job.error || 'Batch job failed');
+      const data = job.result;
 
       const skipped = data.skipped_count || 0;
       setJobResult({

@@ -12,6 +12,12 @@ services:
       - DATA_DIR=/data/documents
       - TTS_BASE_URL=${TTS_BASE_URL:-http://host.docker.internal:8000}
       - TTS_API_KEY=${TTS_API_KEY:-}
+      # Strongly recommended: protects the UI, API and audio with HTTP Basic auth.
+      - READER_USERNAME=${READER_USERNAME:-reader}
+      - READER_PASSWORD=${READER_PASSWORD:-}
+      # Set to 1 to allow importing pages from private/LAN addresses.
+      - ALLOW_PRIVATE_URLS=${ALLOW_PRIVATE_URLS:-}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-50}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

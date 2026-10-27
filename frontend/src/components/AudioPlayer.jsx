@@ -86,6 +86,7 @@ export default function AudioPlayer({
   // Full note audio generation state
   const [queueStatus, setQueueStatus] = useState(() => priorityAudioQueue.getStatus());
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -255,19 +256,41 @@ export default function AudioPlayer({
     priorityAudioQueue.cancelFullDocument(docId);
   };
 
-  // Download entire concatenated audio
-  const handleDownloadFullAudio = () => {
-    if (!docId) return;
+  // Download entire concatenated audio. Fetched in the background (not by navigating
+  // away) so a failure shows an error instead of replacing the app and stopping playback.
+  const handleDownloadFullAudio = async () => {
+    if (!docId || isExporting) return;
     setIsExporting(true);
-    const url = `/api/documents/${docId}/export-audio?voice=${encodeURIComponent(
-      selectedVoice
-    )}&model=${encodeURIComponent(selectedModel)}&speed=${playbackSpeed}`;
-    
-    // Direct browser navigation triggers file download
-    window.location.href = url;
-    setTimeout(() => {
+    setExportError(null);
+    const params = new URLSearchParams({ voice: selectedVoice, model: selectedModel, speed: '1' });
+    try {
+      const res = await fetch(`/api/documents/${docId}/export-audio?${params.toString()}`);
+      if (!res.ok) {
+        let detail = `Export failed (HTTP ${res.status})`;
+        try {
+          detail = (await res.json()).detail || detail;
+        } catch {
+          // non-JSON error body
+        }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(disposition);
+      const filename = match ? decodeURIComponent(match[1] || match[2]) : 'document.mp3';
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 10000);
+    } catch (err) {
+      setExportError(err.message || 'Export failed');
+    } finally {
       setIsExporting(false);
-    }, 2000);
+    }
   };
 
   const displayBlockIndex = currentBlock !== null && currentBlock !== undefined ? currentBlock : 0;
@@ -473,11 +496,16 @@ export default function AudioPlayer({
                   onClick={handleDownloadFullAudio}
                   disabled={!isReadyToPlay || isExporting}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${t.btnSecondary}`}
-                  title="Download full document as single MP3"
+                  title={exportError ? `Export failed: ${exportError}` : 'Download full document as single MP3'}
                 >
                   {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                   <span className="hidden sm:inline">MP3</span>
                 </button>
+                {exportError && (
+                  <span role="alert" className="text-[11px] text-red-400 max-w-[12rem] truncate" title={exportError}>
+                    {exportError}
+                  </span>
+                )}
 
                 {/* Speed selector */}
                 <div className={`flex items-center rounded-lg p-0.5 ${t.btnSecondary}`}>

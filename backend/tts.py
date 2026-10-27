@@ -34,6 +34,43 @@ def get_audio_filename(block_id: int, voice: str, model: str, speed: float, bloc
     safe_voice = "".join(c for c in voice if c.isalnum() or c in ("-", "_")).lower() or "voice"
     return f"{block_id}_{safe_voice}_{audio_hash}.mp3"
 
+def _upstream_error_message(response: httpx.Response) -> str:
+    """Pull the human-readable message out of an OpenAI- or FastAPI-style error body."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text[:500]
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict) and err.get("message"):
+            return str(err["message"])
+        if isinstance(body.get("detail"), str):
+            return body["detail"]
+    return response.text[:500]
+
+
+class SynthesizedAudio(bytes):
+    """Audio bytes plus what the speech gateway reported about how they were made."""
+
+    engine: Optional[str] = None
+    voice: Optional[str] = None
+    fallback: bool = False
+
+    @classmethod
+    def from_response(cls, response: httpx.Response) -> "SynthesizedAudio":
+        audio = cls(response.content)
+        audio.engine = response.headers.get("x-engine")
+        audio.voice = response.headers.get("x-voice")
+        audio.fallback = response.headers.get("x-fallback", "").lower() == "true"
+        return audio
+
+
+def is_tts_model_id(model_id: str) -> bool:
+    """The gateway's /v1/models also lists speech-to-text models; hide those from TTS pickers."""
+    m = (model_id or "").lower()
+    return not any(k in m for k in ("whisper", "groq", "transcri", "stt"))
+
+
 class UniversalTTSClient:
     """Client for upstream OpenAI-compatible Universal TTS service."""
 
@@ -66,7 +103,7 @@ class UniversalTTSClient:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 url = f"{self.base_url}/v1/models"
-                response = await client.get(url, headers=self._get_headers())
+                response = await client.get(url, params={"type": "tts"}, headers=self._get_headers())
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
@@ -101,10 +138,10 @@ class UniversalTTSClient:
         model: str = "tts-1",
         speed: float = 1.0,
         response_format: str = "mp3"
-    ) -> bytes:
+    ) -> SynthesizedAudio:
         """
         Synthesize speech from text via Universal TTS /v1/audio/speech.
-        Returns raw audio bytes.
+        Returns audio bytes; `.fallback` is True when the gateway substituted another voice.
         """
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="Cannot synthesize empty text")
@@ -127,11 +164,13 @@ class UniversalTTSClient:
                 url = f"{self.base_url}/v1/audio/speech"
                 response = await client.post(url, json=payload, headers=self._get_headers())
                 response.raise_for_status()
-                return response.content
+                return SynthesizedAudio.from_response(response)
             except httpx.HTTPStatusError as e:
+                status = e.response.status_code
                 raise HTTPException(
-                    status_code=e.response.status_code,
-                    detail=f"Universal TTS synthesis failed: {e.response.text}"
+                    # Upstream auth/server problems are a gateway failure from the browser's view.
+                    status_code=status if 400 <= status < 500 and status not in (401, 403) else 502,
+                    detail=f"Universal TTS synthesis failed: {_upstream_error_message(e.response)}"
                 )
             except httpx.RequestError as e:
                 raise HTTPException(

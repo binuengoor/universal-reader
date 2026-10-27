@@ -7,7 +7,7 @@ import DocumentEditor from './components/DocumentEditor';
 import SettingsModal from './components/SettingsModal';
 import KeyboardShortcutsModal from './components/KeyboardShortcutsModal';
 import DisplaySettingsDrawer from './components/DisplaySettingsDrawer';
-import { priorityAudioQueue } from './utils/priorityAudioQueue';
+import { priorityAudioQueue, buildBlockAudioUrl } from './utils/priorityAudioQueue';
 import { getTheme } from './utils/theme';
 
 export default function App() {
@@ -108,8 +108,43 @@ export default function App() {
     blockId: null,
     voice: null,
     model: null,
-    speed: null,
   });
+
+  // Timer for the configurable pause between blocks; cleared on pause/seek/doc switch
+  const nextBlockTimerRef = useRef(null);
+  const clearNextBlockTimer = () => {
+    if (nextBlockTimerRef.current) {
+      clearTimeout(nextBlockTimerRef.current);
+      nextBlockTimerRef.current = null;
+    }
+  };
+
+  // Which document activeBlockId currently refers to (guards progress sync during doc switches)
+  const activeBlockDocRef = useRef(null);
+
+  // Persist the player's voice/model choice so opening another document keeps it
+  const persistVoiceChoice = (voice, model) => {
+    try {
+      if (voice) localStorage.setItem('universal_reader_voice', voice);
+      if (model) localStorage.setItem('universal_reader_model', model);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Refresh block count and per-block audio versions for a document (after edits/settings changes)
+  const refreshDocAudioInfo = useCallback(async (docId) => {
+    try {
+      const res = await fetch(`/api/documents/${docId}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const chunks = data.chunks || [];
+      priorityAudioQueue.setAudioKeys(docId, chunks.map((c) => c.audio_key || ''));
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
 
   // Fetch backend settings on mount to ensure user's configured default model and voice are picked up
   useEffect(() => {
@@ -159,31 +194,25 @@ export default function App() {
   });
 
 
-  // Fetch document summary (e.g. block count) when selectedDocId changes
+  // Refresh document summary (block count, title, audio versions) when the open document
+  // changes or settings change (e.g. glossary edits alter the spoken text).
+  // Switching the audio session to another document is handled by handleOpenDocument.
   useEffect(() => {
     let ignore = false;
     if (selectedDocId) {
-      fetch(`/api/documents/${selectedDocId}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (!ignore && data) {
-            const count = data.chunks?.length || 0;
-            const title = data.meta?.title || 'Document';
-            setTotalBlocks(count);
-            setAudioDoc((prev) => {
-              if (prev && prev.id === selectedDocId) {
-                return { ...prev, title, totalBlocks: count };
-              }
-              return { id: selectedDocId, title, totalBlocks: count };
-            });
-          }
-        })
-        .catch(() => {});
+      refreshDocAudioInfo(selectedDocId).then((data) => {
+        if (ignore || !data) return;
+        if (audioDocRef.current && audioDocRef.current.id !== selectedDocId) return;
+        const count = data.chunks?.length || 0;
+        const title = data.meta?.title || 'Document';
+        setTotalBlocks(count);
+        setAudioDoc((prev) => (prev && prev.id === selectedDocId ? { ...prev, title, totalBlocks: count } : prev));
+      });
     }
     return () => {
       ignore = true;
     };
-  }, [selectedDocId]);
+  }, [selectedDocId, settingsVersion, refreshDocAudioInfo]);
 
   // Sleep Timer countdown effect
   useEffect(() => {
@@ -215,7 +244,9 @@ export default function App() {
   // Sync reading/listening progress to backend
   useEffect(() => {
     const docIdToSync = audioDoc?.id || selectedDocId;
-    if (docIdToSync && activeBlockId !== null) {
+    // Only sync when activeBlockId is known to belong to this document; during a
+    // document switch it may still hold the previous document's position.
+    if (docIdToSync && activeBlockId !== null && activeBlockDocRef.current === docIdToSync) {
       fetch(`/api/documents/${docIdToSync}/progress`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -254,16 +285,23 @@ export default function App() {
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
+    clearNextBlockTimer();
+
     const voice = selectedVoiceRef.current;
     const model = selectedModelRef.current;
     const speed = playbackSpeedRef.current;
 
-    // Check if we have an in-memory preloaded Blob URL
-    const blobUrl = priorityAudioQueue.getBlobUrl(targetDocId, targetBlockId, voice, model, speed);
-    const serverUrl = `/api/documents/${targetDocId}/blocks/${targetBlockId}/audio?voice=${encodeURIComponent(
-      voice
-    )}&model=${encodeURIComponent(model)}&speed=${speed}`;
+    // Audio is synthesized at 1.0x; speed is applied only via playbackRate.
+    const blobUrl = priorityAudioQueue.getBlobUrl(targetDocId, targetBlockId, voice, model);
+    const serverUrl = buildBlockAudioUrl(
+      targetDocId,
+      targetBlockId,
+      voice,
+      model,
+      priorityAudioQueue.getAudioKey(targetDocId, targetBlockId)
+    );
     const finalSrc = blobUrl || serverUrl;
+    priorityAudioQueue.pin(finalSrc);
 
     // Mark current config so useEffect doesn't duplicate-load or interrupt ongoing audio
     lastLoadedConfigRef.current = {
@@ -271,8 +309,8 @@ export default function App() {
       blockId: targetBlockId,
       voice,
       model,
-      speed,
     };
+    activeBlockDocRef.current = targetDocId;
 
     // Synchronously assign src and playbackRate on HTMLAudioElement
     audioEl.src = finalSrc;
@@ -324,7 +362,13 @@ export default function App() {
       if (document.hidden || pauseMs <= 0) {
         playBlock(nextBlock, true);
       } else {
-        setTimeout(() => {
+        const docAtEnd = audioDocRef.current?.id;
+        clearNextBlockTimer();
+        nextBlockTimerRef.current = setTimeout(() => {
+          nextBlockTimerRef.current = null;
+          // The user may have paused, picked another block or switched documents meanwhile
+          if (!isPlayingRef.current || audioDocRef.current?.id !== docAtEnd) return;
+          if (activeBlockRef.current !== currentBlock) return;
           playBlock(nextBlock, true);
         }, pauseMs);
       }
@@ -344,19 +388,19 @@ export default function App() {
     if (!audioEl) return;
 
     const last = lastLoadedConfigRef.current;
-    // Skip if already loaded for this exact block and configuration (e.g. from playBlock)
+    // Skip if already loaded for this exact block and configuration (e.g. from playBlock).
+    // Speed changes never reload audio: they only change playbackRate.
     if (
       last.docId === targetDocId &&
       last.blockId === activeBlockId &&
       last.voice === selectedVoice &&
-      last.model === selectedModel &&
-      last.speed === playbackSpeed
+      last.model === selectedModel
     ) {
       return;
     }
 
     playBlock(activeBlockId, isPlaying);
-  }, [selectedDocId, audioDoc?.id, activeBlockId, selectedVoice, selectedModel, playbackSpeed, isPlaying]);
+  }, [selectedDocId, audioDoc?.id, activeBlockId, selectedVoice, selectedModel, isPlaying]);
 
   // Lookahead sliding window prefetch for blocks N+1, N+2, and N+3 (priority 5)
   useEffect(() => {
@@ -380,18 +424,18 @@ export default function App() {
           blockId: nextIndex,
           voice: selectedVoice,
           model: selectedModel,
-          speed: playbackSpeed,
           priority: 5,
         });
       }
     }
-  }, [selectedDocId, audioDoc?.id, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel, playbackSpeed]);
+  }, [selectedDocId, audioDoc?.id, activeBlockId, isPlaying, totalBlocks, selectedVoice, selectedModel]);
 
   const handleTogglePlay = () => {
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
     if (isPlayingRef.current) {
+      clearNextBlockTimer();
       audioEl.pause();
       setIsPlaying(false);
       isPlayingRef.current = false;
@@ -411,7 +455,6 @@ export default function App() {
         last.blockId === currentBlock &&
         last.voice === selectedVoiceRef.current &&
         last.model === selectedModelRef.current &&
-        last.speed === playbackSpeedRef.current &&
         audioEl.src
       ) {
         setIsPlaying(true);
@@ -444,11 +487,13 @@ export default function App() {
   const handleVoiceChange = (voice) => {
     setSelectedVoice(voice);
     selectedVoiceRef.current = voice;
+    persistVoiceChoice(voice, null);
   };
 
   const handleModelChange = (model) => {
     setSelectedModel(model);
     selectedModelRef.current = model;
+    persistVoiceChoice(null, model);
   };
 
   const handleNextBlock = () => {
@@ -635,35 +680,28 @@ export default function App() {
     }
   };
 
-  const handleOpenDocument = async (id) => {
-    try {
-      const res = await fetch('/api/settings');
-      if (res.ok) {
-        const data = await res.json();
-        const defModel = data.tts_default_model || data.default_model || 'edge-tts';
-        const defVoice = data.tts_default_voice || data.default_voice || 'en-US-ChristopherNeural';
-        setSelectedModel(defModel);
-        setSelectedVoice(defVoice);
-      }
-    } catch {
-      // keep current defaults
-    }
-
+  const handleOpenDocument = async (id, { forceReload = false } = {}) => {
+    // The player's voice/model is a persisted user choice; don't reset it per document.
     setSelectedDocId(id);
 
-    // If opening a different document than active audio session, load its details and resume position
-    if (!audioDoc || audioDoc.id !== id) {
+    // If opening a different document than active audio session (or the open one was
+    // edited), load its details and resume position
+    if (!audioDoc || audioDoc.id !== id || forceReload) {
+      clearNextBlockTimer();
       priorityAudioQueue.clearBlobUrls();
-      lastLoadedConfigRef.current = { docId: null, blockId: null, voice: null, model: null, speed: null };
+      lastLoadedConfigRef.current = { docId: null, blockId: null, voice: null, model: null };
+      activeBlockDocRef.current = null;
       try {
-        const docRes = await fetch(`/api/documents/${id}`);
-        if (docRes.ok) {
-          const docData = await docRes.json();
+        const docData = await refreshDocAudioInfo(id);
+        if (docData) {
           const docTitle = docData.meta?.title || 'Document';
           const blocksCount = docData.chunks?.length || 0;
-          const resumeIndex = docData.meta?.last_block_index || 0;
+          const savedIndex = docData.meta?.last_block_index || 0;
+          const resumeIndex = Math.min(Math.max(0, savedIndex), Math.max(0, blocksCount - 1));
+          activeBlockDocRef.current = id;
           setAudioDoc({ id, title: docTitle, totalBlocks: blocksCount });
           setTotalBlocks(blocksCount);
+          totalBlocksRef.current = blocksCount;
           setActiveBlockId(resumeIndex);
           activeBlockRef.current = resumeIndex;
 
@@ -673,7 +711,6 @@ export default function App() {
             blockId: resumeIndex,
             voice: selectedVoiceRef.current,
             model: selectedModelRef.current,
-            speed: playbackSpeedRef.current,
             priority: 5,
           });
           if (resumeIndex + 1 < blocksCount) {
@@ -682,7 +719,6 @@ export default function App() {
               blockId: resumeIndex + 1,
               voice: selectedVoiceRef.current,
               model: selectedModelRef.current,
-              speed: playbackSpeedRef.current,
               priority: 5,
             });
           }
@@ -706,9 +742,10 @@ export default function App() {
   };
 
   const handleDismissMiniPlayer = () => {
+    clearNextBlockTimer();
     setIsPlaying(false);
     isPlayingRef.current = false;
-    lastLoadedConfigRef.current = { docId: null, blockId: null, voice: null, model: null, speed: null };
+    lastLoadedConfigRef.current = { docId: null, blockId: null, voice: null, model: null };
     priorityAudioQueue.clearBlobUrls();
     if (audioRef.current) {
       audioRef.current.pause();
@@ -750,7 +787,8 @@ export default function App() {
           onBack={() => setEditingDocId(null)}
           onSaved={(docId) => {
             setEditingDocId(null);
-            handleOpenDocument(docId);
+            // Text changed: reload block count and audio versions even if this doc is playing
+            handleOpenDocument(docId, { forceReload: true });
           }}
           onOpenDisplaySettings={() => setIsDisplayDrawerOpen(true)}
           theme={readerSettings.theme}
@@ -843,9 +881,11 @@ export default function App() {
           setSettingsVersion((v) => v + 1);
           if (settings && settings.tts_default_model) {
             setSelectedModel(settings.tts_default_model);
+            persistVoiceChoice(null, settings.tts_default_model);
           }
           if (settings && settings.tts_default_voice) {
             setSelectedVoice(settings.tts_default_voice);
+            persistVoiceChoice(settings.tts_default_voice, null);
           }
           if (settings && settings.inter_block_pause_ms !== undefined) {
             setInterBlockPauseMs(Number(settings.inter_block_pause_ms));

@@ -75,22 +75,17 @@ export default function DocumentEditor({ docId, onBack, onSaved, onOpenDisplaySe
     try {
       setIsGeneratingAi(true);
       setError(null);
-      const res = await fetch('/api/documents/batch-llm', {
+      // Suggestions are based on the unsaved editor text and only fill the form;
+      // nothing is written until the user presses Save.
+      const res = await fetch('/api/documents/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_type: 'all',
-          doc_ids: [docId],
-          overwrite: true
-        })
+        body: JSON.stringify({ content })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'AI generation failed');
-      const item = data.results && data.results[0];
-      if (item) {
-        if (item.new_title) setTitle(item.new_title);
-        if (item.new_tags) setTags(item.new_tags);
-      }
+      if (data.title) setTitle(data.title);
+      if (Array.isArray(data.tags) && data.tags.length) setTags(data.tags);
     } catch (err) {
       setError(err.message || 'Failed to generate AI title and tags');
     } finally {

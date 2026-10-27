@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from backend.cleaner import clean_text_for_speech
+from backend.storage import atomic_write_json, atomic_write_text
 
 # Base storage directory: defaults to data/documents in the project root
 BASE_DATA_DIR = os.environ.get("DATA_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "documents")))
@@ -150,14 +151,10 @@ def save_document(
         "llm_state": initial_llm_state
     }
 
-    with open(os.path.join(doc_dir, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
-
-    with open(os.path.join(doc_dir, "document.md"), "w", encoding="utf-8") as f:
-        f.write(text)
-
-    with open(os.path.join(doc_dir, "chunks.json"), "w", encoding="utf-8") as f:
-        json.dump(chunks, f, indent=2)
+    # Content first, metadata last: a document only shows up in the library once complete.
+    atomic_write_text(os.path.join(doc_dir, "document.md"), text)
+    atomic_write_json(os.path.join(doc_dir, "chunks.json"), chunks)
+    atomic_write_json(os.path.join(doc_dir, "meta.json"), meta)
 
     return doc_dir
 

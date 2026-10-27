@@ -2,6 +2,11 @@ import os
 import json
 from typing import Dict, Any
 
+from .storage import atomic_write_json
+
+SECRET_KEYS = ("tts_api_key", "llm_api_key", "reddit_session_cookie")
+SECRET_MASK = "********"
+
 # Prefer persistent /data volume if present, otherwise local data directory
 DEFAULT_CONFIG_PATH = "/data/config.json" if os.path.isdir("/data") else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "config.json"))
 CONFIG_FILE = os.environ.get("CONFIG_FILE", DEFAULT_CONFIG_PATH)
@@ -9,7 +14,7 @@ CONFIG_FILE = os.environ.get("CONFIG_FILE", DEFAULT_CONFIG_PATH)
 def load_settings() -> Dict[str, Any]:
     """Load application settings from config.json with env fallback."""
     settings = {
-        "tts_base_url": os.environ.get("TTS_BASE_URL", "https://kokoro.askbp.win").rstrip("/"),
+        "tts_base_url": os.environ.get("TTS_BASE_URL", "http://localhost:8000").rstrip("/"),
         "tts_api_key": os.environ.get("TTS_API_KEY", ""),
         "default_model": os.environ.get("DEFAULT_MODEL", "edge-tts"),
         "default_voice": os.environ.get("DEFAULT_VOICE", "en-US-JennyNeural"),
@@ -35,9 +40,7 @@ def load_settings() -> Dict[str, Any]:
             try:
                 with open(legacy_path, "r", encoding="utf-8") as f:
                     saved = json.load(f)
-                os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(saved, f, indent=2)
+                atomic_write_json(CONFIG_FILE, saved)
             except Exception:
                 pass
 
@@ -89,21 +92,40 @@ def load_settings() -> Dict[str, Any]:
         settings["glossary"] = sanitized_glossary
     return settings
 
+def _read_saved() -> Dict[str, Any]:
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def save_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
-    """Persist settings to config.json and update runtime environment."""
-    current = load_settings()
+    """
+    Persist only the keys the user changed. Values that came from environment
+    variables are not frozen into config.json, so later env changes still apply.
+    """
+    effective = load_settings()
+    saved = _read_saved()
     for k, v in new_settings.items():
-        if v is not None:
-            current[k] = v
+        if v is None:
+            continue
+        if k in saved or effective.get(k) != v:
+            saved[k] = v
 
-    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(current, f, indent=2)
+    atomic_write_json(CONFIG_FILE, saved)
+    return load_settings()
 
-    # Sync to os.environ for other modules
-    if "tts_base_url" in current:
-        os.environ["TTS_BASE_URL"] = current["tts_base_url"]
-    if "tts_api_key" in current:
-        os.environ["TTS_API_KEY"] = current["tts_api_key"]
 
-    return current
+def mask_settings(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy of settings safe to send to the browser: secrets replaced by a mask."""
+    masked = dict(settings)
+    for key in SECRET_KEYS:
+        value = masked.get(key)
+        masked[f"{key}_set"] = bool(value)
+        if value:
+            masked[key] = SECRET_MASK
+    return masked

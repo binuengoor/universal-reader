@@ -22,6 +22,34 @@ import DOMPurify from 'dompurify';
 import DisplaySettingsDrawer from './DisplaySettingsDrawer';
 import { getTheme } from '../utils/theme';
 
+// Parsing + sanitizing every block on each render (e.g. on every block change while
+// playing) is slow for long documents, so cache the HTML per block text.
+const markdownCache = new Map();
+const MARKDOWN_CACHE_LIMIT = 5000;
+
+function renderMarkdownCached(rawText) {
+  if (!rawText) return '';
+  const cached = markdownCache.get(rawText);
+  if (cached !== undefined) return cached;
+  let html;
+  try {
+    const parsed = marked.parse(rawText, {
+      gfm: true,
+      breaks: true,
+    });
+    html = DOMPurify.sanitize(parsed, {
+      ADD_ATTR: ['target', 'rel'],
+    });
+  } catch {
+    html = DOMPurify.sanitize(rawText);
+  }
+  if (markdownCache.size >= MARKDOWN_CACHE_LIMIT) {
+    markdownCache.delete(markdownCache.keys().next().value);
+  }
+  markdownCache.set(rawText, html);
+  return html;
+}
+
 export default function ReaderView({
   docId,
   onBack,
@@ -301,21 +329,7 @@ export default function ReaderView({
     );
   };
 
-  // Configure marked for secure, seamless in-chunk rendering
-  const renderMarkdownHtml = (rawText) => {
-    if (!rawText) return '';
-    try {
-      const parsed = marked.parse(rawText, {
-        gfm: true,
-        breaks: true,
-      });
-      return DOMPurify.sanitize(parsed, {
-        ADD_ATTR: ['target', 'rel'],
-      });
-    } catch {
-      return DOMPurify.sanitize(rawText);
-    }
-  };
+  const renderMarkdownHtml = renderMarkdownCached;
 
 
   if (loading) {

@@ -110,7 +110,8 @@ services:
       - ./data:/data
     environment:
       - TTS_BASE_URL=http://universal-speech:8880
-      - TTS_API_KEY=your-tts-key-if-any
+      - TTS_API_KEY=your-tts-key-if-any     # the gateway's SPEECH_API_KEY
+      - READER_PASSWORD=choose-a-password    # HTTP Basic auth (user: reader)
       - DEFAULT_MODEL=edge-tts
       - DEFAULT_VOICE=en-US-ChristopherNeural
       - LLM_BASE_URL=https://api.groq.com/openai/v1
@@ -126,6 +127,19 @@ docker compose up -d
 ```
 
 Open your browser at `http://localhost:3003`.
+
+### 3. Security settings
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `READER_PASSWORD` / `READER_USERNAME` | unset / `reader` | HTTP Basic auth for the UI, API and audio. Leave unset only behind an authenticating reverse proxy (a warning is logged). |
+| `ALLOW_PRIVATE_URLS` | off | URL import refuses private/LAN/loopback addresses (SSRF protection). Set `1` to import pages from your own network. |
+| `MAX_UPLOAD_MB` | `50` | Upload size limit for PDF/EPUB/DOCX/text imports. |
+| `CORS_ORIGINS` | none | Extra origins allowed to call the API; not needed for the bundled UI or the Vite dev proxy. |
+
+API keys are never sent back to the browser: the Settings screen shows them masked, and saving the mask keeps the stored value. Only settings you change in the UI are written to `config.json`, so environment variables keep working for everything else.
+
+> Upgrading from an older version: older releases copied *every* setting (including env-provided ones like `TTS_BASE_URL`) into `/data/config.json`, which then overrides the environment. If an env change seems ignored, remove that key from `config.json`.
 
 ---
 
@@ -153,7 +167,9 @@ npm run dev
 
 ### Running Backend Tests
 ```bash
-./backend/venv/bin/pytest backend/tests -q
+pip install -r backend/requirements-dev.txt
+pytest -q              # offline suite
+pytest -q -m network   # tests that hit live services (Reddit)
 ```
 
 ---
